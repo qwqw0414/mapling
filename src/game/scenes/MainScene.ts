@@ -1,4 +1,4 @@
-import { Container, Graphics, Text } from 'pixi.js';
+import { Container, Graphics, Text, Sprite, Texture } from 'pixi.js';
 import { GifSprite, GifSource } from 'pixi.js/gif';
 import { BaseScene } from './BaseScene';
 import {
@@ -12,8 +12,13 @@ import { getMapById } from '@/data/maps';
 import { getMobById } from '@/data/mobs';
 import { AudioManager } from '@/game/systems/AudioManager';
 import { AssetManager } from '@/game/systems/AssetManager';
+import { PartySlot } from '@/game/ui/PartySlot';
+import { CharacterCreationUI } from '@/game/ui/CharacterCreationUI';
+import { MapSelectionUI } from '@/game/ui/MapSelectionUI';
 import type { MapInfo } from '@/types/map';
 import type { MobData } from '@/types/monster';
+import type { PartyCharacter } from '@/types/party';
+import type { Stats } from '@/types/character';
 
 // ============================================================================
 // Constants
@@ -87,7 +92,13 @@ export class MainScene extends BaseScene {
   // UI elements
   private mapTitleText: Text | null = null;
   private mesoText: Text | null = null;
-  private partySlots: Container[] = [];
+  private partySlots: PartySlot[] = [];
+  private createCharacterButton: Container | null = null;
+  private characterCreationUI: CharacterCreationUI | null = null;
+  private mapSelectionUI: MapSelectionUI | null = null;
+  
+  // Party data (initially empty)
+  private partyCharacters: Array<PartyCharacter | null> = [];
 
   // Log system
   private logEntries: Array<{ text: Text; createdAt: number }> = [];
@@ -100,9 +111,6 @@ export class MainScene extends BaseScene {
   private damageOffsets: Map<string, { offset: number; lastTime: number }> = new Map();
   private readonly DAMAGE_STACK_HEIGHT = 35;
   private readonly DAMAGE_STACK_RESET_TIME = 600;
-
-  // Click handler
-  private clickHandler: ((event: MouseEvent) => void) | null = null;
 
   constructor(mapId: number = 104010001) {
     super();
@@ -169,7 +177,6 @@ export class MainScene extends BaseScene {
     this.createFieldArea();
     this.createLogArea();
     this.spawnInitialMonsters();
-    this.setupClickHandler();
 
     console.log('[MainScene] Created with layout:', this.layout);
   }
@@ -339,6 +346,11 @@ export class MainScene extends BaseScene {
     });
     this.mapTitleText.x = padding;
     this.mapTitleText.y = (this.layout.header.height - this.mapTitleText.height) / 2;
+    this.mapTitleText.eventMode = 'static';
+    this.mapTitleText.cursor = 'pointer';
+    this.mapTitleText.on('pointerdown', () => {
+      this.openMapSelection();
+    });
     this.headerLayer.addChild(this.mapTitleText);
 
     // Meso display (right side)
@@ -359,142 +371,410 @@ export class MainScene extends BaseScene {
     this.mesoText.x = this.layout.header.width - padding;
     this.mesoText.y = this.layout.header.height / 2;
     this.headerLayer.addChild(this.mesoText);
+
+    // Add character button will be added dynamically
+    this.updateAddCharacterButton();
   }
 
-  // ============================================================================
-  // Party Area (캐릭터 슬롯 4개)
-  // ============================================================================
+  /**
+   * Update add character button in header
+   */
+  private updateAddCharacterButton(): void {
+    // Remove existing button only if it's in header layer
+    if (this.createCharacterButton && this.createCharacterButton.parent === this.headerLayer) {
+      this.headerLayer.removeChild(this.createCharacterButton);
+      this.createCharacterButton.destroy();
+      this.createCharacterButton = null;
+    }
 
-  private createPartyArea(): void {
-    const padding = LAYOUT_CONFIG.PARTY_AREA.PADDING;
-    const slotGap = LAYOUT_CONFIG.PARTY_AREA.SLOT_GAP;
+    // Show button in header only if party has at least 1 character and is not full
     const maxSlots = LAYOUT_CONFIG.PARTY_AREA.MAX_SLOTS;
-
-    const availableWidth = this.layout.party.width - padding * 2;
-    const availableHeight = this.layout.party.height - padding * 2;
-
-    // Calculate slot size (maintain minimum size)
-    const slotWidth = Math.max(
-      SLOT_CONFIG.MIN_WIDTH,
-      Math.floor((availableWidth - slotGap * (maxSlots - 1)) / maxSlots)
-    );
-    const slotHeight = Math.max(
-      SLOT_CONFIG.MIN_HEIGHT,
-      availableHeight
-    );
-
-    // Center the slots horizontally
-    const totalSlotsWidth = slotWidth * maxSlots + slotGap * (maxSlots - 1);
-    const startX = padding + (availableWidth - totalSlotsWidth) / 2;
-    const startY = padding;
-
-    // Create 4 slots
-    for (let i = 0; i < maxSlots; i++) {
-      const slotContainer = this.createPartySlot(i, slotWidth, slotHeight);
-      slotContainer.x = startX + i * (slotWidth + slotGap);
-      slotContainer.y = startY;
-      this.partyLayer.addChild(slotContainer);
-      this.partySlots.push(slotContainer);
+    if (this.partyCharacters.length > 0 && this.partyCharacters.length < maxSlots) {
+      const padding = LAYOUT_CONFIG.HEADER.PADDING;
+      
+      this.createCharacterButton = this.createSmallAddButton();
+      
+      // Position: right side, before meso text
+      const mesoTextLeft = this.mesoText ? this.mesoText.x - this.mesoText.width : this.layout.header.width - padding;
+      this.createCharacterButton.x = mesoTextLeft - 40; // 40px gap from meso
+      this.createCharacterButton.y = (this.layout.header.height - 32) / 2; // Center vertically (32 is button size)
+      
+      this.headerLayer.addChild(this.createCharacterButton);
     }
   }
 
-  private createPartySlot(index: number, width: number, height: number): Container {
-    const slotContainer = new Container();
-    slotContainer.label = `slot_${index}`;
+  // ============================================================================
+  // Party Area (동적 캐릭터 슬롯)
+  // ============================================================================
 
-    const { EMPTY_SLOT } = SLOT_CONFIG;
+  /**
+   * Create party area UI
+   * Shows "Create Character" button if no characters exist
+   * Otherwise shows character slots centered with fixed width
+   */
+  private createPartyArea(): void {
+    this.renderPartySlots();
+    this.createPartyFieldDivider();
+  }
+
+  /**
+   * Render party slots based on current party state
+   */
+  private renderPartySlots(): void {
+    // Clear existing slots and button
+    this.clearPartySlots();
+
+    const padding = LAYOUT_CONFIG.PARTY_AREA.PADDING;
+    const availableHeight = this.layout.party.height - padding * 2;
+
+    // Fixed slot dimensions
+    const slotWidth = SLOT_CONFIG.MIN_WIDTH;
+    const slotHeight = Math.max(SLOT_CONFIG.MIN_HEIGHT, availableHeight);
+    const slotGap = LAYOUT_CONFIG.PARTY_AREA.SLOT_GAP;
+
+    if (this.partyCharacters.length === 0) {
+      // No characters: show "Create Character" button only
+      this.createCharacterButton = this.createAddCharacterButton(slotWidth, slotHeight, true);
+      this.createCharacterButton.x = (this.layout.party.width - slotWidth) / 2;
+      this.createCharacterButton.y = padding;
+      this.partyLayer.addChild(this.createCharacterButton);
+    } else {
+      // Has characters: show character slots only
+      const totalWidth = this.partyCharacters.length * slotWidth + (this.partyCharacters.length - 1) * slotGap;
+      const startX = (this.layout.party.width - totalWidth) / 2;
+      const startY = padding;
+
+      // Create character slots
+      for (let i = 0; i < this.partyCharacters.length; i++) {
+        const character = this.partyCharacters[i];
+        const slot = this.createPartySlot(i, slotWidth, slotHeight);
+        
+        if (character) {
+          slot.setCharacter(character);
+        }
+        
+        slot.x = startX + i * (slotWidth + slotGap);
+        slot.y = startY;
+        this.partyLayer.addChild(slot);
+        this.partySlots.push(slot);
+      }
+    }
+
+    // Update add button in header (if needed)
+    this.updateAddCharacterButton();
+  }
+
+  /**
+   * Clear all party slots
+   */
+  private clearPartySlots(): void {
+    // Remove existing slots
+    for (const slot of this.partySlots) {
+      this.partyLayer.removeChild(slot);
+      slot.destroy();
+    }
+    this.partySlots = [];
+
+    // Remove create button if exists in party layer
+    if (this.createCharacterButton && this.createCharacterButton.parent === this.partyLayer) {
+      this.partyLayer.removeChild(this.createCharacterButton);
+      this.createCharacterButton.destroy();
+      this.createCharacterButton = null;
+    }
+  }
+
+  /**
+   * Create "Add Character" button (large, for initial state)
+   */
+  private createAddCharacterButton(width: number, height: number, isInitial: boolean = false): Container {
+    const button = new Container();
+    button.label = 'addCharacterButton';
 
     // Background
     const background = new Graphics();
     background.roundRect(0, 0, width, height, 8);
-    background.fill({ color: EMPTY_SLOT.BACKGROUND_COLOR });
-    background.stroke({ color: EMPTY_SLOT.BORDER_COLOR, width: 2 });
-    slotContainer.addChild(background);
+    background.fill({ color: 0x1a1a1a });
+    background.stroke({ color: 0x4488ff, width: 2, alpha: 0.6 });
+    button.addChild(background);
 
-    // Empty slot indicator (plus sign)
-    const plusSize = EMPTY_SLOT.PLUS_SIZE;
+    // Plus icon
+    const plusSize = 40;
     const plusGraphics = new Graphics();
     plusGraphics.rect(width / 2 - plusSize / 2, height / 2 - 2, plusSize, 4);
-    plusGraphics.fill({ color: EMPTY_SLOT.PLUS_COLOR });
+    plusGraphics.fill({ color: 0x4488ff });
     plusGraphics.rect(width / 2 - 2, height / 2 - plusSize / 2, 4, plusSize);
-    plusGraphics.fill({ color: EMPTY_SLOT.PLUS_COLOR });
-    plusGraphics.label = 'emptyIndicator';
-    slotContainer.addChild(plusGraphics);
+    plusGraphics.fill({ color: 0x4488ff });
+    button.addChild(plusGraphics);
 
-    // Slot number label
-    const slotLabel = new Text({
-      text: `슬롯 ${index + 1}`,
+    // Label
+    const labelText = isInitial ? '캐릭터 생성' : '캐릭터 추가';
+    const label = new Text({
+      text: labelText,
       style: {
-        fontSize: 12,
-        fill: 0x666666,
+        fontSize: 13,
+        fill: 0x4488ff,
         fontFamily: 'Arial',
+        fontWeight: 'bold',
       },
     });
-    slotLabel.anchor.set(0.5, 0);
-    slotLabel.x = width / 2;
-    slotLabel.y = height - 25;
-    slotLabel.label = 'slotLabel';
-    slotContainer.addChild(slotLabel);
+    label.anchor.set(0.5, 0);
+    label.x = width / 2;
+    label.y = height / 2 + plusSize / 2 + 8;
+    button.addChild(label);
 
-    return slotContainer;
+    // Interactivity
+    button.eventMode = 'static';
+    button.cursor = 'pointer';
+
+    button.on('pointerdown', () => {
+      this.onAddCharacterClick();
+    });
+
+    button.on('pointerover', () => {
+      background.clear();
+      background.roundRect(0, 0, width, height, 8);
+      background.fill({ color: 0x2a2a2a });
+      background.stroke({ color: 0x5599ff, width: 2 });
+    });
+
+    button.on('pointerout', () => {
+      background.clear();
+      background.roundRect(0, 0, width, height, 8);
+      background.fill({ color: 0x1a1a1a });
+      background.stroke({ color: 0x4488ff, width: 2, alpha: 0.6 });
+    });
+
+    return button;
   }
 
-  private updatePartySlots(): void {
-    const padding = LAYOUT_CONFIG.PARTY_AREA.PADDING;
-    const slotGap = LAYOUT_CONFIG.PARTY_AREA.SLOT_GAP;
-    const maxSlots = LAYOUT_CONFIG.PARTY_AREA.MAX_SLOTS;
+  /**
+   * Create small "+" button (for top-right corner)
+   */
+  private createSmallAddButton(): Container {
+    const button = new Container();
+    button.label = 'smallAddButton';
 
-    const availableWidth = this.layout.party.width - padding * 2;
-    const availableHeight = this.layout.party.height - padding * 2;
+    const buttonSize = 32;
+    const plusSize = 16;
 
-    // Calculate slot size (maintain minimum size)
-    const slotWidth = Math.max(
-      SLOT_CONFIG.MIN_WIDTH,
-      Math.floor((availableWidth - slotGap * (maxSlots - 1)) / maxSlots)
-    );
-    const slotHeight = Math.max(
-      SLOT_CONFIG.MIN_HEIGHT,
-      availableHeight
-    );
+    // Background circle
+    const background = new Graphics();
+    background.circle(buttonSize / 2, buttonSize / 2, buttonSize / 2);
+    background.fill({ color: 0x4488ff });
+    background.stroke({ color: 0xFFFFFF, width: 2 });
+    button.addChild(background);
 
-    // Center the slots horizontally
-    const totalSlotsWidth = slotWidth * maxSlots + slotGap * (maxSlots - 1);
-    const startX = padding + (availableWidth - totalSlotsWidth) / 2;
-    const startY = padding;
+    // Plus icon
+    const plusGraphics = new Graphics();
+    plusGraphics.rect(buttonSize / 2 - plusSize / 2, buttonSize / 2 - 1.5, plusSize, 3);
+    plusGraphics.fill({ color: 0xFFFFFF });
+    plusGraphics.rect(buttonSize / 2 - 1.5, buttonSize / 2 - plusSize / 2, 3, plusSize);
+    plusGraphics.fill({ color: 0xFFFFFF });
+    button.addChild(plusGraphics);
 
-    // Update each slot position and size
-    for (let i = 0; i < this.partySlots.length; i++) {
-      const slot = this.partySlots[i];
-      slot.x = startX + i * (slotWidth + slotGap);
-      slot.y = startY;
+    // Interactivity
+    button.eventMode = 'static';
+    button.cursor = 'pointer';
 
-      // Update slot background
-      const bg = slot.children[0] as Graphics;
-      if (bg) {
-        bg.clear();
-        bg.roundRect(0, 0, slotWidth, slotHeight, 8);
-        bg.fill({ color: SLOT_CONFIG.EMPTY_SLOT.BACKGROUND_COLOR });
-        bg.stroke({ color: SLOT_CONFIG.EMPTY_SLOT.BORDER_COLOR, width: 2 });
-      }
+    button.on('pointerdown', () => {
+      this.onAddCharacterClick();
+    });
 
-      // Update plus indicator position
-      const plusGraphics = slot.getChildByName('emptyIndicator') as Graphics;
-      if (plusGraphics) {
-        const plusSize = SLOT_CONFIG.EMPTY_SLOT.PLUS_SIZE;
-        plusGraphics.clear();
-        plusGraphics.rect(slotWidth / 2 - plusSize / 2, slotHeight / 2 - 2, plusSize, 4);
-        plusGraphics.fill({ color: SLOT_CONFIG.EMPTY_SLOT.PLUS_COLOR });
-        plusGraphics.rect(slotWidth / 2 - 2, slotHeight / 2 - plusSize / 2, 4, plusSize);
-        plusGraphics.fill({ color: SLOT_CONFIG.EMPTY_SLOT.PLUS_COLOR });
-      }
+    button.on('pointerover', () => {
+      background.clear();
+      background.circle(buttonSize / 2, buttonSize / 2, buttonSize / 2);
+      background.fill({ color: 0x5599ff });
+      background.stroke({ color: 0xFFFFFF, width: 2 });
+    });
 
-      // Update slot label position
-      const slotLabel = slot.getChildByName('slotLabel') as Text;
-      if (slotLabel) {
-        slotLabel.x = slotWidth / 2;
-        slotLabel.y = slotHeight - 25;
-      }
+    button.on('pointerout', () => {
+      background.clear();
+      background.circle(buttonSize / 2, buttonSize / 2, buttonSize / 2);
+      background.fill({ color: 0x4488ff });
+      background.stroke({ color: 0xFFFFFF, width: 2 });
+    });
+
+    return button;
+  }
+
+  /**
+   * Handle add character button click
+   */
+  private onAddCharacterClick(): void {
+    console.log('[MainScene] Add character clicked');
+    this.showCharacterCreationUI();
+  }
+
+  private createPartyFieldDivider(): void {
+    const divider = new Graphics();
+    divider.label = 'partyFieldDivider';
+    
+    // Draw gradient-like divider line
+    const lineY = this.layout.party.height;
+    const padding = 30;
+    
+    divider.moveTo(padding, lineY);
+    divider.lineTo(this.layout.party.width - padding, lineY);
+    divider.stroke({ color: 0x4488ff, width: 2 });
+    
+    // Add subtle glow effect (wider, more transparent line behind)
+    const glowLine = new Graphics();
+    glowLine.label = 'partyFieldDividerGlow';
+    glowLine.moveTo(padding, lineY);
+    glowLine.lineTo(this.layout.party.width - padding, lineY);
+    glowLine.stroke({ color: 0x4488ff, width: 6, alpha: 0.2 });
+    
+    this.partyLayer.addChild(glowLine);
+    this.partyLayer.addChild(divider);
+    
+    // Set initial alpha
+    divider.alpha = 0.3;
+    glowLine.alpha = 0.15;
+  }
+
+  private updatePartyFieldDivider(): void {
+    const divider = this.partyLayer.getChildByName('partyFieldDivider') as Graphics;
+    const glowLine = this.partyLayer.getChildByName('partyFieldDividerGlow') as Graphics;
+    
+    if (divider) {
+      const lineY = this.layout.party.height;
+      const padding = 30;
+      const currentAlpha = divider.alpha;
+      
+      divider.clear();
+      divider.moveTo(padding, lineY);
+      divider.lineTo(this.layout.party.width - padding, lineY);
+      divider.stroke({ color: 0x4488ff, width: 2 });
+      divider.alpha = currentAlpha;
     }
+    
+    if (glowLine) {
+      const lineY = this.layout.party.height;
+      const padding = 30;
+      
+      glowLine.clear();
+      glowLine.moveTo(padding, lineY);
+      glowLine.lineTo(this.layout.party.width - padding, lineY);
+      glowLine.stroke({ color: 0x4488ff, width: 6, alpha: 0.2 });
+    }
+  }
+
+  private createPartySlot(index: number, width: number, height: number): PartySlot {
+    const partySlot = new PartySlot({
+      width,
+      height,
+      slotIndex: index,
+      character: null,
+      onClick: (slotIndex: number) => {
+        this.onSlotClick(slotIndex);
+      },
+    });
+
+    return partySlot;
+  }
+
+  /**
+   * Handle party slot click
+   */
+  private onSlotClick(slotIndex: number): void {
+    const character = this.partyCharacters[slotIndex];
+    if (character) {
+      console.log(`[MainScene] Character slot ${slotIndex} clicked: [name]=[${character.name}]`);
+      // TODO: Open character details/equipment/skills UI
+    } else {
+      console.log(`[MainScene] Empty slot ${slotIndex} clicked`);
+    }
+  }
+
+  /**
+   * Show character creation UI
+   */
+  private showCharacterCreationUI(): void {
+    const maxSlots = LAYOUT_CONFIG.PARTY_AREA.MAX_SLOTS;
+    if (this.partyCharacters.length >= maxSlots) {
+      console.log('[MainScene] Party is full');
+      return;
+    }
+
+    // Remove existing UI if any
+    if (this.characterCreationUI) {
+      this.container.removeChild(this.characterCreationUI);
+      this.characterCreationUI.destroy();
+      this.characterCreationUI = null;
+    }
+
+    // Create new character creation UI
+    this.characterCreationUI = new CharacterCreationUI({
+      onConfirm: (data) => {
+        this.createCharacter(data.name, data.stats);
+        this.hideCharacterCreationUI();
+      },
+      onCancel: () => {
+        this.hideCharacterCreationUI();
+      },
+    });
+
+    this.characterCreationUI.centerIn(MAP_CONFIG.WIDTH, MAP_CONFIG.HEIGHT);
+    this.container.addChild(this.characterCreationUI);
+
+    console.log('[MainScene] Character creation UI opened');
+  }
+
+  /**
+   * Hide character creation UI
+   */
+  private hideCharacterCreationUI(): void {
+    if (this.characterCreationUI) {
+      this.container.removeChild(this.characterCreationUI);
+      this.characterCreationUI.destroy();
+      this.characterCreationUI = null;
+      console.log('[MainScene] Character creation UI closed');
+    }
+  }
+
+  /**
+   * Create new character with given name and stats
+   */
+  private createCharacter(name: string, stats: Stats): void {
+    const newCharacter: PartyCharacter = {
+      id: `char_${Date.now()}`,
+      name: name,
+      level: 1,
+      exp: 0,
+      job: 'beginner',
+      stats: { ...stats },
+      combatStats: {
+        accuracy: 10,
+        evasion: 5,
+        criticalChance: 0.05,
+        criticalDamage: 1.5,
+        dropRate: 1.0,
+      },
+      statPoints: 0,
+      skillPoints: 0,
+      hp: 50 + stats.str * 2, // HP based on STR
+      maxHp: 50 + stats.str * 2,
+      mp: 10 + stats.int * 2, // MP based on INT
+      maxMp: 10 + stats.int * 2,
+      isActive: true,
+      learnedSkills: [],
+      equippedSkillSlots: [null, null, null, null, null, null],
+      lastAttackTime: 0,
+      currentAnimation: 'stand',
+    };
+
+    this.partyCharacters.push(newCharacter);
+    this.renderPartySlots();
+
+    console.log(`[MainScene] Character created: [name]=[${newCharacter.name}] [stats]=[STR:${stats.str},DEX:${stats.dex},INT:${stats.int},LUK:${stats.luk}] [partySize]=[${this.partyCharacters.length}]`);
+  }
+
+  /**
+   * Update party slots on resize
+   */
+  private updatePartySlots(): void {
+    // Re-render all slots with new dimensions
+    this.renderPartySlots();
   }
 
   // ============================================================================
@@ -517,6 +797,9 @@ export class MainScene extends BaseScene {
     groundLine.lineTo(this.layout.field.width - 20, groundY);
     groundLine.stroke({ color: 0x333333, width: 2 });
     this.fieldLayer.addChild(groundLine);
+
+    // Setup click handler for field area only
+    this.setupClickHandler();
   }
 
   private updateFieldArea(): void {
@@ -679,9 +962,11 @@ export class MainScene extends BaseScene {
     if (this.mesoText) {
       this.mesoText.x = this.layout.header.width - LAYOUT_CONFIG.HEADER.PADDING;
     }
+    this.updateAddCharacterButton();
 
-    // Update party slots
+    // Update party slots and divider
     this.updatePartySlots();
+    this.updatePartyFieldDivider();
 
     // Update field area (background, ground line, monster positions)
     this.updateFieldArea();
@@ -1071,11 +1356,30 @@ export class MainScene extends BaseScene {
     this.setMonsterAnimation(sprite, 'hit1');
     this.playMobSound(monster.mobId, 'Damage');
 
+    // Check if monster will die
+    const willDie = monster.currentHp <= 0;
+    
+    // If dying, reset position first before showing damage number
+    if (willDie) {
+      monster.isJumping = false;
+      monster.velocityY = 0;
+      monster.y = monster.baseY;
+      monster.action = 'idle';
+      sprite.y = monster.y;
+      
+      // Reset spriteContainer position
+      const spriteContainer = sprite.getChildByName('spriteContainer') as Container;
+      if (spriteContainer) {
+        spriteContainer.y = 0;
+      }
+    }
+
+    // Show damage number at the correct position
     this.showDamageNumber(instanceId, damage, monster.x, monster.y, isCritical);
 
-    // Update HP bar
+    // Update HP bar only if not dying
     const hpBarContainer = sprite.getChildByName('hpBarContainer') as Container;
-    if (hpBarContainer) {
+    if (hpBarContainer && !willDie) {
       hpBarContainer.visible = true;
 
       const hpBar = hpBarContainer.getChildByName('hpBar') as Graphics;
@@ -1089,7 +1393,7 @@ export class MainScene extends BaseScene {
       }
     }
 
-    if (monster.currentHp <= 0) {
+    if (willDie) {
       monster.isDying = true;
       monster.deathStartTime = now;
       monster.isHit = false;
@@ -1105,6 +1409,7 @@ export class MainScene extends BaseScene {
         this.tryDropItems(mob.drops, monster.x, monster.y);
       }
 
+      // Hide HP bar and name tag
       if (hpBarContainer) {
         hpBarContainer.visible = false;
       }
@@ -1244,10 +1549,169 @@ export class MainScene extends BaseScene {
   private tryDropItems(drops: Array<{ itemId: number; name?: string; chance: number }>, x: number, y: number): void {
     for (const drop of drops) {
       if (Math.random() * 100 <= drop.chance) {
+        this.createItemDrop(drop, x, y);
         this.logItemDrop(drop.name || `아이템 ${drop.itemId}`);
         this.playItemPickupSound();
       }
     }
+  }
+
+  /**
+   * Create item drop sprite with fly-to-party animation
+   */
+  private async createItemDrop(drop: { itemId: number; name?: string; chance: number }, x: number, y: number): Promise<void> {
+    const itemContainer = new Container();
+    itemContainer.x = x;
+    itemContainer.y = y;
+
+    // Try to load item icon
+    const assetManager = AssetManager.getInstance();
+    const iconBlob = await assetManager.getImage('item', drop.itemId, 'icon');
+
+    if (iconBlob) {
+      const img = new Image();
+      img.src = URL.createObjectURL(iconBlob);
+      await new Promise(resolve => { img.onload = resolve; });
+
+      const texture = Texture.from(img);
+      const itemSprite = new Sprite(texture);
+      itemSprite.anchor.set(0.5);
+
+      // Scale down if too large
+      const maxSize = 32;
+      if (itemSprite.width > maxSize || itemSprite.height > maxSize) {
+        const scale = maxSize / Math.max(itemSprite.width, itemSprite.height);
+        itemSprite.scale.set(scale);
+      }
+
+      itemContainer.addChild(itemSprite);
+    } else {
+      // Fallback: colored box
+      const fallback = new Graphics();
+      fallback.rect(-12, -12, 24, 24);
+      fallback.fill({ color: 0x8B4513 });
+      fallback.rect(-10, -10, 20, 20);
+      fallback.fill({ color: 0xDEB887 });
+      itemContainer.addChild(fallback);
+    }
+
+    this.fieldLayer.addChild(itemContainer);
+
+    // Fly to party area (top center)
+    this.flyToPartyArea(itemContainer, x, y);
+  }
+
+  /**
+   * Fly to party area animation (item flies up to character slots)
+   */
+  private flyToPartyArea(container: Container, startX: number, startY: number): void {
+    // Target: just above the divider line (relative to field layer, so negative Y)
+    const targetX = this.layout.party.width / 2;
+    const targetY = -5; // Just at the divider line level
+
+    const duration = 600;
+    const startTime = Date.now();
+
+    // Small bounce first
+    const bounceHeight = 40;
+    const bounceTime = 150;
+
+    const animate = (): void => {
+      const elapsed = Date.now() - startTime;
+
+      if (elapsed < bounceTime) {
+        // Bounce up phase
+        const progress = elapsed / bounceTime;
+        const bounceY = Math.sin(progress * Math.PI) * bounceHeight;
+        container.y = startY - bounceY;
+        container.scale.set(1 + progress * 0.2); // Slight scale up
+      } else {
+        // Fly to party area phase
+        const flyProgress = Math.min(1, (elapsed - bounceTime) / (duration - bounceTime));
+        
+        // Ease out cubic for smooth deceleration
+        const easeProgress = 1 - Math.pow(1 - flyProgress, 3);
+
+        container.x = startX + (targetX - startX) * easeProgress;
+        container.y = startY + (targetY - startY) * easeProgress;
+        
+        // Scale down and fade as it approaches
+        const scale = 1.2 - flyProgress * 0.4;
+        container.scale.set(scale);
+        container.alpha = 1 - flyProgress * 0.3;
+
+        // Trigger divider effect when crossing the boundary
+        if (flyProgress > 0.6 && flyProgress < 0.65) {
+          this.playDividerEffect();
+        }
+
+        if (flyProgress >= 1) {
+          this.fieldLayer.removeChild(container);
+          container.destroy();
+          return;
+        }
+      }
+
+      requestAnimationFrame(animate);
+    };
+
+    requestAnimationFrame(animate);
+  }
+
+  /**
+   * Play divider line glow effect when item is collected
+   */
+  private playDividerEffect(): void {
+    const divider = this.partyLayer.getChildByName('partyFieldDivider') as Graphics;
+    const glowLine = this.partyLayer.getChildByName('partyFieldDividerGlow') as Graphics;
+    if (!divider) return;
+
+    // Already animating check
+    if (divider.alpha > 0.5) return;
+
+    const startTime = Date.now();
+    const duration = 500;
+    const originalAlpha = 0.3;
+    const peakAlpha = 1.0;
+    const glowOriginalAlpha = 0.15;
+    const glowPeakAlpha = 0.6;
+
+    const animate = (): void => {
+      const elapsed = Date.now() - startTime;
+      const progress = Math.min(elapsed / duration, 1);
+
+      // Pulse effect: quick rise, slow fall
+      let alpha: number;
+      let glowAlpha: number;
+      if (progress < 0.25) {
+        // Rise
+        const riseProgress = progress / 0.25;
+        alpha = originalAlpha + (peakAlpha - originalAlpha) * riseProgress;
+        glowAlpha = glowOriginalAlpha + (glowPeakAlpha - glowOriginalAlpha) * riseProgress;
+      } else {
+        // Fall
+        const fallProgress = (progress - 0.25) / 0.75;
+        const easeOut = 1 - Math.pow(1 - fallProgress, 2);
+        alpha = peakAlpha - (peakAlpha - originalAlpha) * easeOut;
+        glowAlpha = glowPeakAlpha - (glowPeakAlpha - glowOriginalAlpha) * easeOut;
+      }
+
+      divider.alpha = alpha;
+      if (glowLine) {
+        glowLine.alpha = glowAlpha;
+      }
+
+      if (progress < 1) {
+        requestAnimationFrame(animate);
+      } else {
+        divider.alpha = originalAlpha;
+        if (glowLine) {
+          glowLine.alpha = glowOriginalAlpha;
+        }
+      }
+    };
+
+    requestAnimationFrame(animate);
   }
 
   // ============================================================================
@@ -1285,28 +1749,30 @@ export class MainScene extends BaseScene {
   }
 
   // ============================================================================
-  // Click Handler (Test Combat)
+  // Click Handler (Test Combat - Field Area Only)
   // ============================================================================
 
+  /**
+   * Setup click handler for field area only
+   */
   private setupClickHandler(): void {
-    const canvas = document.querySelector('canvas');
-    if (!canvas) return;
-
-    this.clickHandler = () => {
+    // Make field layer interactive
+    this.fieldLayer.eventMode = 'static';
+    this.fieldLayer.cursor = 'pointer';
+    
+    // Add click event to field layer only
+    this.fieldLayer.on('pointerdown', () => {
       this.attackRandomMonster();
-    };
-
-    canvas.addEventListener('click', this.clickHandler);
+    });
   }
 
+  /**
+   * Remove click handler from field layer
+   */
   private removeClickHandler(): void {
-    if (this.clickHandler) {
-      const canvas = document.querySelector('canvas');
-      if (canvas) {
-        canvas.removeEventListener('click', this.clickHandler);
-      }
-      this.clickHandler = null;
-    }
+    this.fieldLayer.eventMode = 'auto';
+    this.fieldLayer.cursor = 'auto';
+    this.fieldLayer.removeAllListeners('pointerdown');
   }
 
   private attackRandomMonster(): void {
@@ -1355,6 +1821,165 @@ export class MainScene extends BaseScene {
   }
 
   // ============================================================================
+  // Map Transition
+  // ============================================================================
+
+  /**
+   * Open map selection UI
+   */
+  private openMapSelection(): void {
+    if (this.mapSelectionUI) {
+      return; // Already open
+    }
+
+    this.mapSelectionUI = new MapSelectionUI({
+      onMapSelect: (mapId: number) => {
+        this.closeMapSelection();
+        this.changeMap(mapId);
+      },
+      onClose: () => {
+        this.closeMapSelection();
+      },
+      currentMapId: this.mapInfo?.id ?? 0,
+    });
+
+    this.container.addChild(this.mapSelectionUI);
+  }
+
+  /**
+   * Close map selection UI
+   */
+  private closeMapSelection(): void {
+    if (this.mapSelectionUI) {
+      this.container.removeChild(this.mapSelectionUI);
+      this.mapSelectionUI.destroy();
+      this.mapSelectionUI = null;
+    }
+  }
+
+  /**
+   * Change to a new map
+   */
+  private async changeMap(newMapId: number): Promise<void> {
+    if (!this.mapInfo || this.mapInfo.id === newMapId) {
+      return; // Same map
+    }
+
+    console.log(`[MainScene] Changing map: [from]=[${this.mapInfo.name}] [to]=[${newMapId}]`);
+
+    // 1. Clear current map
+    this.clearAllMonsters();
+    this.clearAllDrops();
+    await this.stopCurrentBGM();
+
+    // 2. Load new map
+    this.mapInfo = getMapById(newMapId) ?? null;
+    if (!this.mapInfo) {
+      console.error('[MainScene] Failed to load new map:', newMapId);
+      return;
+    }
+
+    // 3. Update UI
+    if (this.mapTitleText) {
+      this.mapTitleText.text = `${this.mapInfo.name} ▼`;
+    }
+
+    // 4. Load new map assets
+    await this.loadMapAssets();
+
+    // 5. Play new BGM
+    if (this.mapInfo.bgm) {
+      const audioManager = AudioManager.getInstance();
+      audioManager.playBgm(this.mapInfo.bgm);
+    }
+
+    // 6. Spawn initial monsters
+    this.spawnInitialMonsters();
+
+    console.log(`[MainScene] Map changed successfully to: [map]=[${this.mapInfo.name}]`);
+  }
+
+  /**
+   * Clear all monsters from the field
+   */
+  private clearAllMonsters(): void {
+    console.log(`[MainScene] Clearing all monsters: [count]=[${this.monsters.size}]`);
+
+    for (const [_instanceId, sprite] of this.monsterSprites.entries()) {
+      this.fieldLayer.removeChild(sprite);
+      sprite.destroy();
+    }
+
+    this.monsters.clear();
+    this.monsterSprites.clear();
+    this.damageOffsets.clear();
+    this.spawnTimer = 0;
+    this.monsterIdCounter = 0;
+  }
+
+  /**
+   * Clear all drops from the field
+   */
+  private clearAllDrops(): void {
+    // Remove all drop items (they have specific labels)
+    const children = this.fieldLayer.children.slice();
+    for (const child of children) {
+      if (child.label && child.label.startsWith('dropItem_')) {
+        this.fieldLayer.removeChild(child);
+        child.destroy();
+      }
+    }
+  }
+
+  /**
+   * Stop current BGM
+   */
+  private async stopCurrentBGM(): Promise<void> {
+    const audioManager = AudioManager.getInstance();
+    await audioManager.stopBgm();
+  }
+
+  /**
+   * Load assets for new map
+   */
+  private async loadMapAssets(): Promise<void> {
+    if (!this.mapInfo) return;
+
+    const assetManager = AssetManager.getInstance();
+
+    // Clear existing mob assets
+    this.mobGifSources.clear();
+    this.mobSounds.clear();
+
+    // Preload monster GIF animations
+    for (const mobSpawn of this.mapInfo.spawns.normal.mobs) {
+      const mob = getMobById(mobSpawn.mobId);
+      if (mob) {
+        for (const animation of MOB_ANIMATIONS) {
+          const gifSource = await assetManager.getMobGif(mob.id, animation);
+          if (gifSource) {
+            const key = `${mob.id}_${animation}`;
+            this.mobGifSources.set(key, gifSource);
+          }
+        }
+
+        const mobIdStr = mob.id.toString().padStart(7, '0');
+        const soundTypes: Array<'Damage' | 'Die'> = ['Damage', 'Die'];
+        for (const soundType of soundTypes) {
+          const soundData = await assetManager.getMobSound(mobIdStr, soundType);
+          if (soundData) {
+            const audio = this.createAudioFromBase64(soundData);
+            const key = `${mob.id}_${soundType}`;
+            this.mobSounds.set(key, audio);
+          }
+        }
+      }
+    }
+
+    console.log(`[MainScene] Loaded assets for map: [map]=[${this.mapInfo.name}]`);
+  }
+
+  // ============================================================================
   // Cleanup
   // ============================================================================
 
@@ -1371,6 +1996,11 @@ export class MainScene extends BaseScene {
       entry.text.destroy();
     }
     this.logEntries = [];
+
+    if (this.mapSelectionUI) {
+      this.mapSelectionUI.destroy();
+      this.mapSelectionUI = null;
+    }
 
     await super.destroy();
   }

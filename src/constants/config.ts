@@ -225,7 +225,7 @@ export const SLOT_CONFIG = {
   SKILL_BAR: {
     SLOT_SIZE: 28,
     SLOT_GAP: 2,
-    SLOT_COUNT: 8,
+    SLOT_COUNT: 6,
   },
 
   // 빈 슬롯 스타일

@@ -8,9 +8,12 @@
 export interface MapInfo {
   id: number;
   name: string;
+  streetName?: string;
+  mapMark?: string;
   recommendedLevel: LevelRange;
   bgm: string;
   spawns: MapSpawnConfig;
+  isTown?: boolean;
 }
 
 // ============================================================================

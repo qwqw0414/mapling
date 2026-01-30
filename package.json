@@ -1,0 +1,22 @@
+{
+  "name": "mapling",
+  "version": "0.1.0",
+  "description": "MapleStory Idle - 메이플스토리 방치형 사냥 게임",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc && vite build",
+    "preview": "vite preview",
+    "lint": "eslint src --ext .ts",
+    "type-check": "tsc --noEmit"
+  },
+  "dependencies": {
+    "pixi.js": "^8.6.6",
+    "zustand": "^5.0.3"
+  },
+  "devDependencies": {
+    "@types/node": "^22.12.0",
+    "typescript": "^5.7.3",
+    "vite": "^6.0.11"
+  }
+}

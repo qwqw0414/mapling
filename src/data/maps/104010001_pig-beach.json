@@ -1,0 +1,20 @@
+{
+  "id": 104010001,
+  "name": "돼지의 해안가",
+  "streetName": "히든 스트리트",
+  "mapMark": "리스항구",
+  "recommendedLevel": {
+    "min": 7,
+    "max": 15
+  },
+  "bgm": "Bgm02/AboveTheTreetops",
+  "spawns": {
+    "normal": {
+      "mobs": [
+        { "mobId": 1210100, "weight": 40 },
+        { "mobId": 1210101, "weight": 50 },
+        { "mobId": 130101, "weight": 10 }
+      ]
+    }
+  }
+}

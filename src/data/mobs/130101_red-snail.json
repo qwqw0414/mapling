@@ -1,0 +1,42 @@
+{
+  "id": 130101,
+  "name": "빨간 달팽이",
+  "meta": {
+    "level": 4,
+    "maxHp": 40,
+    "maxMp": 30,
+    "exp": 8,
+    "speed": -50,
+    "physicalDamage": 27,
+    "physicalDefense": 3,
+    "magicDamage": 0,
+    "magicDefense": 10,
+    "accuracy": 35,
+    "evasion": 0,
+    "isBoss": false,
+    "isBodyAttack": true
+  },
+  "canJump": false,
+  "meso": {
+    "amount": 15,
+    "chance": 65
+  },
+  "drops": [
+    { "itemId": 4000016, "name": "빨간 달팽이의 껍질", "chance": 40.0 },
+    { "itemId": 2000000, "name": "빨간 포션", "chance": 1.0 },
+    { "itemId": 2060000, "name": "활전용 화살", "chance": 0.8 },
+    { "itemId": 2061000, "name": "석궁전용 화살", "chance": 0.8 },
+    { "itemId": 2010009, "name": "초록사과", "chance": 0.7 },
+    { "itemId": 4020004, "name": "오팔의 원석", "chance": 0.3 },
+    { "itemId": 4010004, "name": "은의 원석", "chance": 0.2 },
+    { "itemId": 1402001, "name": "목검", "chance": 0.16 },
+    { "itemId": 1322007, "name": "가죽 핸드백", "chance": 0.01 },
+    { "itemId": 1372002, "name": "메탈 완드", "chance": 0.01 },
+    { "itemId": 1082029, "name": "브라운 듀오", "chance": 0.01 },
+    { "itemId": 1072060, "name": "브라운 우드탑", "chance": 0.01 },
+    { "itemId": 1032003, "name": "자수정 귀고리", "chance": 0.01 },
+    { "itemId": 1060022, "name": "홍몽 바지", "chance": 0.01 },
+    { "itemId": 2041009, "name": "망토 마나 주문서 100%", "chance": 0.006 },
+    { "itemId": 2040502, "name": "전신 갑옷 민첩 주문서 10%", "chance": 0.006 }
+  ]
+}

@@ -1,0 +1,31 @@
+{
+  "id": 1110100,
+  "name": "초록버섯",
+  "meta": {
+    "level": 15,
+    "maxHp": 250,
+    "maxMp": 25,
+    "exp": 26,
+    "speed": -60,
+    "physicalDamage": 40,
+    "physicalDefense": 12,
+    "magicDamage": 0,
+    "magicDefense": 40,
+    "accuracy": 45,
+    "evasion": 5,
+    "isBoss": false,
+    "isBodyAttack": true
+  },
+  "canJump": false,
+  "meso": {
+    "amount": 35,
+    "chance": 65
+  },
+  "drops": [
+    { "itemId": 4031146, "name": "동물의 뼈화석", "chance": 50.0 },
+    { "itemId": 4000012, "name": "초록버섯의 갓", "chance": 40.0 },
+    { "itemId": 2000000, "name": "빨간 포션", "chance": 2.0 },
+    { "itemId": 2000001, "name": "주황 포션", "chance": 2.0 },
+    { "itemId": 2000003, "name": "파란 포션", "chance": 1.0 }
+  ]
+}

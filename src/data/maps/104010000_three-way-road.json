@@ -1,0 +1,22 @@
+{
+  "id": 104010000,
+  "name": "세갈래길",
+  "streetName": "빅토리아 아일랜드",
+  "mapMark": "리스항구",
+  "recommendedLevel": {
+    "min": 5,
+    "max": 12
+  },
+  "bgm": "Bgm02/AboveTheTreetops",
+  "spawns": {
+    "normal": {
+      "mobs": [
+        { "mobId": 210100, "weight": 30 },
+        { "mobId": 1210102, "weight": 25 },
+        { "mobId": 1210100, "weight": 20 },
+        { "mobId": 130101, "weight": 15 },
+        { "mobId": 100101, "weight": 10 }
+      ]
+    }
+  }
+}

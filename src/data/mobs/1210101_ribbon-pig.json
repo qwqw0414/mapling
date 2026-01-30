@@ -1,0 +1,42 @@
+{
+  "id": 1210101,
+  "name": "리본 돼지",
+  "meta": {
+    "level": 10,
+    "maxHp": 120,
+    "maxMp": 45,
+    "exp": 20,
+    "speed": 5,
+    "physicalDamage": 70,
+    "physicalDefense": 10,
+    "magicDamage": 0,
+    "magicDefense": 30,
+    "accuracy": 40,
+    "evasion": 2,
+    "isBoss": false,
+    "isBodyAttack": true
+  },
+  "canJump": true,
+  "meso": {
+    "amount": 25,
+    "chance": 65
+  },
+  "drops": [
+    { "itemId": 4000002, "name": "돼지의 리본", "chance": 40.0 },
+    { "itemId": 4003004, "name": "뻣뻣한 깃털", "chance": 4.0 },
+    { "itemId": 2000000, "name": "빨간 포션", "chance": 2.0 },
+    { "itemId": 4000021, "name": "동물의 가죽", "chance": 1.5 },
+    { "itemId": 2060000, "name": "활전용 화살", "chance": 0.8 },
+    { "itemId": 2061000, "name": "석궁전용 화살", "chance": 0.8 },
+    { "itemId": 4010002, "name": "미스릴의 원석", "chance": 0.3 },
+    { "itemId": 4020001, "name": "자수정의 원석", "chance": 0.2 },
+    { "itemId": 1040011, "name": "은색 래더 후드웨어", "chance": 0.01 },
+    { "itemId": 1041012, "name": "빨간 줄무늬 티셔츠", "chance": 0.01 },
+    { "itemId": 1040014, "name": "주황색 스포츠 티셔츠", "chance": 0.01 },
+    { "itemId": 1040034, "name": "흑야", "chance": 0.009 },
+    { "itemId": 1060024, "name": "흑야 바지", "chance": 0.009 },
+    { "itemId": 1402018, "name": "환목검", "chance": 0.008 },
+    { "itemId": 1032003, "name": "자수정 귀고리", "chance": 0.007 },
+    { "itemId": 2040902, "name": "방패 방어력 주문서 10%", "chance": 0.006 }
+  ]
+}

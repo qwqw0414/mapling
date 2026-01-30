@@ -1,0 +1,28 @@
+{
+  "id": 2130100,
+  "name": "스톤 골렘",
+  "meta": {
+    "level": 10,
+    "maxHp": 550,
+    "maxMp": 40,
+    "exp": 38,
+    "speed": -50,
+    "physicalDamage": 120,
+    "physicalDefense": 50,
+    "magicDamage": 0,
+    "magicDefense": 40,
+    "accuracy": 48,
+    "evasion": 3,
+    "isBoss": false,
+    "isBodyAttack": true
+  },
+  "canJump": false,
+  "meso": {
+    "amount": 40,
+    "chance": 65
+  },
+  "drops": [
+    { "itemId": 4000014, "name": "돌의 정령", "chance": 40.0 },
+    { "itemId": 2000001, "name": "주황 포션", "chance": 2.0 }
+  ]
+}

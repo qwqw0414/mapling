@@ -1,0 +1,29 @@
+{
+  "id": 1120100,
+  "name": "옥토퍼스",
+  "meta": {
+    "level": 12,
+    "maxHp": 200,
+    "maxMp": 50,
+    "exp": 24,
+    "speed": -70,
+    "physicalDamage": 35,
+    "physicalDefense": 10,
+    "magicDamage": 0,
+    "magicDefense": 40,
+    "accuracy": 40,
+    "evasion": 4,
+    "isBoss": false,
+    "isBodyAttack": true
+  },
+  "canJump": false,
+  "meso": {
+    "amount": 30,
+    "chance": 65
+  },
+  "drops": [
+    { "itemId": 4000006, "name": "옥토퍼스의 다리", "chance": 40.0 },
+    { "itemId": 2000000, "name": "빨간 포션", "chance": 2.0 },
+    { "itemId": 2000003, "name": "파란 포션", "chance": 1.0 }
+  ]
+}

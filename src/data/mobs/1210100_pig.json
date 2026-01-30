@@ -1,0 +1,44 @@
+{
+  "id": 1210100,
+  "name": "돼지",
+  "meta": {
+    "level": 7,
+    "maxHp": 75,
+    "maxMp": 40,
+    "exp": 15,
+    "speed": 0,
+    "physicalDamage": 37,
+    "physicalDefense": 5,
+    "magicDamage": 0,
+    "magicDefense": 20,
+    "accuracy": 40,
+    "evasion": 0,
+    "isBoss": false,
+    "isBodyAttack": true
+  },
+  "canJump": true,
+  "meso": {
+    "amount": 18,
+    "chance": 65
+  },
+  "drops": [
+    { "itemId": 4000021, "name": "동물의 가죽", "chance": 1.5 },
+    { "itemId": 4000017, "name": "돼지의 머리", "chance": 1.0 },
+    { "itemId": 2000000, "name": "빨간 포션", "chance": 1.0 },
+    { "itemId": 2061000, "name": "석궁전용 화살", "chance": 0.8 },
+    { "itemId": 2060000, "name": "활전용 화살", "chance": 0.8 },
+    { "itemId": 2010009, "name": "초록사과", "chance": 0.7 },
+    { "itemId": 4020006, "name": "토파즈의 원석", "chance": 0.3 },
+    { "itemId": 4030011, "name": "돼지 오목알", "chance": 0.3 },
+    { "itemId": 4010006, "name": "금의 원석", "chance": 0.1 },
+    { "itemId": 1472000, "name": "가니어", "chance": 0.1 },
+    { "itemId": 1422000, "name": "나무 망치", "chance": 0.08 },
+    { "itemId": 1040034, "name": "흑야", "chance": 0.01 },
+    { "itemId": 1061028, "name": "흰색 가람 치마", "chance": 0.01 },
+    { "itemId": 1002008, "name": "갈색 가죽 모자", "chance": 0.01 },
+    { "itemId": 1041014, "name": "오렌지 스퀘이머", "chance": 0.01 },
+    { "itemId": 1062002, "name": "갈색 하드래더 바지", "chance": 0.01 },
+    { "itemId": 2040702, "name": "신발 회피 주문서 10%", "chance": 0.006 },
+    { "itemId": 2041021, "name": "망토 행운 주문서 100%", "chance": 0.006 }
+  ]
+}

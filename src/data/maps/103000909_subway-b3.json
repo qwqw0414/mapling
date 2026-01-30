@@ -1,0 +1,20 @@
+{
+  "id": 103000909,
+  "name": "지하철 B3",
+  "streetName": "빅토리아 아일랜드",
+  "mapMark": "커닝시티",
+  "recommendedLevel": {
+    "min": 25,
+    "max": 35
+  },
+  "bgm": "Bgm03/Subway",
+  "spawns": {
+    "normal": {
+      "mobs": [
+        { "mobId": 4230102, "weight": 50 },
+        { "mobId": 3230300, "weight": 30 },
+        { "mobId": 3230301, "weight": 20 }
+      ]
+    }
+  }
+}

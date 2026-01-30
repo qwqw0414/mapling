@@ -1,0 +1,29 @@
+{
+  "id": 2230102,
+  "name": "루팡",
+  "meta": {
+    "level": 25,
+    "maxHp": 550,
+    "maxMp": 55,
+    "exp": 42,
+    "speed": 0,
+    "physicalDamage": 85,
+    "physicalDefense": 25,
+    "magicDamage": 0,
+    "magicDefense": 60,
+    "accuracy": 68,
+    "evasion": 12,
+    "isBoss": false,
+    "isBodyAttack": true
+  },
+  "canJump": true,
+  "meso": {
+    "amount": 58,
+    "chance": 65
+  },
+  "drops": [
+    { "itemId": 4000018, "name": "루팡의 바나나", "chance": 45.0 },
+    { "itemId": 2000001, "name": "주황 포션", "chance": 3.0 },
+    { "itemId": 2000003, "name": "파란 포션", "chance": 1.0 }
+  ]
+}

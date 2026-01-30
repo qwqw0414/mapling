@@ -73,8 +73,8 @@ export class AudioManager {
       return;
     }
 
-    // Stop current BGM
-    this.stopBgm();
+    // Stop current BGM and wait for cleanup
+    await this.stopBgm();
 
     try {
       // Use AssetManager for cached BGM loading
@@ -105,16 +105,18 @@ export class AudioManager {
   /**
    * Stop current BGM
    */
-  stopBgm(): void {
+  async stopBgm(): Promise<void> {
     if (this.state.bgm) {
-      this.fadeOut(this.state.bgm, AUDIO_CONFIG.FADE_DURATION).then(() => {
-        if (this.state.bgm) {
-          this.state.bgm.pause();
-          this.state.bgm.src = '';
-          this.state.bgm = null;
-        }
-      });
+      const audioToStop = this.state.bgm;
+      
+      // Clear state immediately to prevent race conditions
+      this.state.bgm = null;
       this.state.currentBgmPath = null;
+      
+      // Fade out and cleanup
+      await this.fadeOut(audioToStop, AUDIO_CONFIG.FADE_DURATION);
+      audioToStop.pause();
+      audioToStop.src = '';
     }
   }
 

@@ -1,7 +1,7 @@
 {
   "id": 104010001,
   "name": "돼지의 해안가",
-  "streetName": "히든 스트리트",
+  "streetName": "빅토리아 아일랜드",
   "mapMark": "리스항구",
   "recommendedLevel": {
     "min": 7,
@@ -11,9 +11,18 @@
   "spawns": {
     "normal": {
       "mobs": [
-        { "mobId": 1210100, "weight": 40 },
-        { "mobId": 1210101, "weight": 50 },
-        { "mobId": 130101, "weight": 10 }
+        {
+          "mobId": 1210100,
+          "weight": 40
+        },
+        {
+          "mobId": 1210101,
+          "weight": 50
+        },
+        {
+          "mobId": 130101,
+          "weight": 10
+        }
       ]
     }
   }

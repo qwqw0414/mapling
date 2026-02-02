@@ -1,42 +1,130 @@
 {
   "id": 130101,
-  "name": "빨간 달팽이",
+  "name": "Red Snail",
   "meta": {
-    "level": 4,
-    "maxHp": 40,
-    "maxMp": 30,
+    "level": 5,
+    "maxHp": 50,
+    "maxMp": 0,
     "exp": 8,
     "speed": -50,
-    "physicalDamage": 27,
+    "physicalDamage": 15,
     "physicalDefense": 3,
-    "magicDamage": 0,
+    "magicDamage": 12,
     "magicDefense": 10,
-    "accuracy": 35,
+    "accuracy": 10,
     "evasion": 0,
     "isBoss": false,
     "isBodyAttack": true
   },
-  "canJump": false,
+  "drops": [
+    {
+      "itemId": 4000016,
+      "name": "빨간 달팽이의 껍질",
+      "chance": 40
+    },
+    {
+      "itemId": 2000000,
+      "name": "빨간 포션",
+      "chance": 1
+    },
+    {
+      "itemId": 2061000,
+      "name": "석궁전용 화살",
+      "chance": 0.8,
+      "minQuantity": 10,
+      "maxQuantity": 20
+    },
+    {
+      "itemId": 2060000,
+      "name": "활전용 화살",
+      "chance": 0.8,
+      "minQuantity": 10,
+      "maxQuantity": 20
+    },
+    {
+      "itemId": 2010009,
+      "name": "초록사과",
+      "chance": 0.7
+    },
+    {
+      "itemId": 4020004,
+      "name": "오팔의 원석",
+      "chance": 0.3
+    },
+    {
+      "itemId": 4010004,
+      "name": "은의 원석",
+      "chance": 0.2
+    },
+    {
+      "itemId": 2380004,
+      "name": "빨간 달팽이 카드",
+      "chance": 0.1
+    },
+    {
+      "itemId": 1402001,
+      "name": "목검",
+      "chance": 0.08
+    },
+    {
+      "itemId": 1322007,
+      "name": "가죽 핸드백",
+      "chance": 0.01
+    },
+    {
+      "itemId": 1372002,
+      "name": "메탈 완드",
+      "chance": 0.01
+    },
+    {
+      "itemId": 1082029,
+      "name": "브라운 듀오",
+      "chance": 0.01
+    },
+    {
+      "itemId": 1072060,
+      "name": "브라운 우드탑",
+      "chance": 0.01
+    },
+    {
+      "itemId": 1032003,
+      "name": "자수정 귀고리",
+      "chance": 0.01
+    },
+    {
+      "itemId": 1061029,
+      "name": "홍몽 바지",
+      "chance": 0.01
+    },
+    {
+      "itemId": 2040502,
+      "name": "전신 갑옷 민첩성 주문서 10%",
+      "chance": 0.003
+    },
+    {
+      "itemId": 2041009,
+      "name": "망토 마나 주문서 100%",
+      "chance": 0.003
+    },
+    {
+      "itemId": 1052095,
+      "name": "브라운 로키 슈트",
+      "chance": 0.001
+    }
+  ],
+  "nameEn": "Red Snail",
+  "description": "There's apparently a rumor going around that says that the Blue Snails had turned red after leveling-up from their incessant combating, but such a rumor has not been confirmed. This monster can be spotted everywhere throughout Maple Island and Victoria Island. It has unbelievable speed and attack strengths, especially for a snail, which may make it somewhat of a challenging opponent for a beginner. A player who's reached Lv.3 on the 3 Snail Skill could use the Red Snail's shell as a throwable weapon too.",
   "meso": {
-    "amount": 15,
+    "amount": 13,
     "chance": 65
   },
-  "drops": [
-    { "itemId": 4000016, "name": "빨간 달팽이의 껍질", "chance": 40.0 },
-    { "itemId": 2000000, "name": "빨간 포션", "chance": 1.0 },
-    { "itemId": 2060000, "name": "활전용 화살", "chance": 0.8 },
-    { "itemId": 2061000, "name": "석궁전용 화살", "chance": 0.8 },
-    { "itemId": 2010009, "name": "초록사과", "chance": 0.7 },
-    { "itemId": 4020004, "name": "오팔의 원석", "chance": 0.3 },
-    { "itemId": 4010004, "name": "은의 원석", "chance": 0.2 },
-    { "itemId": 1402001, "name": "목검", "chance": 0.16 },
-    { "itemId": 1322007, "name": "가죽 핸드백", "chance": 0.01 },
-    { "itemId": 1372002, "name": "메탈 완드", "chance": 0.01 },
-    { "itemId": 1082029, "name": "브라운 듀오", "chance": 0.01 },
-    { "itemId": 1072060, "name": "브라운 우드탑", "chance": 0.01 },
-    { "itemId": 1032003, "name": "자수정 귀고리", "chance": 0.01 },
-    { "itemId": 1060022, "name": "홍몽 바지", "chance": 0.01 },
-    { "itemId": 2041009, "name": "망토 마나 주문서 100%", "chance": 0.006 },
-    { "itemId": 2040502, "name": "전신 갑옷 민첩 주문서 10%", "chance": 0.006 }
+  "foundAt": [
+    101010100,
+    102050000,
+    104010100,
+    104010200,
+    680010000,
+    680010100,
+    100010100
   ]
 }

@@ -1,95 +1,78 @@
-import type { MapInfo } from '@/types/map';
-
 // ============================================================================
-// Map JSON Imports
+// Map Data Index
 // ============================================================================
 
-import snailHuntingData from './100010000_snail-hunting.json';
-import westRockyMountain4Data from './102020300_west-rocky-mountain4.json';
-import westRockyPassData from './102030000_west-rocky-pass.json';
-import kerningConstructionData from './103010000_kerning-construction.json';
-import swampRegion1Data from './103020000_swamp-region1.json';
-import subwayB3Data from './103000909_subway-b3.json';
-import threeWayRoadData from './104010000_three-way-road.json';
-import pigBeachData from './104010001_pig-beach.json';
-import antTunnel2Data from './105050100_ant-tunnel2.json';
+import type { MapInfo, MapSpawnConfig, MobSpawnWeight, LevelRange } from '@/types/map';
 
-// ============================================================================
-// Map Registry
-// ============================================================================
+// re-export types
+export type { MapInfo, MapSpawnConfig, MobSpawnWeight, LevelRange };
 
-const mapRegistry: Map<number, MapInfo> = new Map();
-
-/**
- * JSON 데이터를 MapInfo 타입으로 변환
- */
-function registerMap(data: unknown): void {
-  const map = data as MapInfo;
-  mapRegistry.set(map.id, map);
+// 확장 타입: API에서 가져온 영문 이름 포함
+export interface MapData extends Omit<MapInfo, 'recommendedLevel' | 'bgm' | 'spawns'> {
+  nameEn?: string;
+  recommendedLevel?: LevelRange;
+  bgm?: string;
+  spawns?: MapSpawnConfig;
 }
 
-// 맵 등록
-registerMap(snailHuntingData);
-registerMap(westRockyMountain4Data);
-registerMap(westRockyPassData);
-registerMap(kerningConstructionData);
-registerMap(swampRegion1Data);
-registerMap(subwayB3Data);
-registerMap(threeWayRoadData);
-registerMap(pigBeachData);
-registerMap(antTunnel2Data);
-
 // ============================================================================
-// Public API
+// Auto-import all JSON files
 // ============================================================================
 
-/**
- * 맵 ID로 맵 정보 조회
- */
-export function getMapById(mapId: number): MapInfo | undefined {
-  return mapRegistry.get(mapId);
+// Vite의 import.meta.glob을 사용하여 모든 JSON 파일 자동 로드
+const mapModules = import.meta.glob<MapData>('./*.json', {
+  eager: true,
+  import: 'default'
+});
+
+// MapData 레코드 생성
+export const MAPS: Record<number, MapData> = {};
+
+for (const path in mapModules) {
+  const map = mapModules[path];
+  MAPS[map.id] = map;
 }
 
-/**
- * 레벨에 맞는 사냥 가능 맵 목록 조회
- * - 캐릭터 레벨 +5까지만 입장 가능
- */
-export function getAvailableMaps(characterLevel: number): MapInfo[] {
-  const maxLevel = characterLevel + 5;
-  return Array.from(mapRegistry.values()).filter(
-    (map) => !map.isTown && map.recommendedLevel.min <= maxLevel
+// ============================================================================
+// Getter Functions
+// ============================================================================
+
+export function getMapById(mapId: number): MapData | undefined {
+  return MAPS[mapId];
+}
+
+export function getMapsByStreetName(streetName: string): MapData[] {
+  return Object.values(MAPS).filter((map) => map.streetName === streetName);
+}
+
+export function getMapsByMapMark(mapMark: string): MapData[] {
+  return Object.values(MAPS).filter((map) => map.mapMark === mapMark);
+}
+
+export function getHuntingMaps(): MapData[] {
+  return Object.values(MAPS).filter(
+    (map) => !map.isTown && map.spawns && map.spawns.normal.mobs.length > 0
   );
 }
 
-/**
- * 레벨에 적합한 추천 맵 목록 조회
- */
-export function getRecommendedMaps(characterLevel: number): MapInfo[] {
-  return Array.from(mapRegistry.values()).filter(
-    (map) =>
-      !map.isTown &&
-      characterLevel >= map.recommendedLevel.min &&
-      characterLevel <= map.recommendedLevel.max
-  );
+// getFieldMaps는 getHuntingMaps의 별칭
+export const getFieldMaps = getHuntingMaps;
+
+export function getTownMaps(): MapData[] {
+  return Object.values(MAPS).filter((map) => map.isTown === true);
 }
 
-/**
- * 모든 맵 목록 조회
- */
-export function getAllMaps(): MapInfo[] {
-  return Array.from(mapRegistry.values());
+export function getMapsByLevelRange(level: number): MapData[] {
+  return Object.values(MAPS).filter((map) => {
+    if (!map.recommendedLevel) return false;
+    return level >= map.recommendedLevel.min && level <= map.recommendedLevel.max;
+  });
 }
 
-/**
- * 필드 맵만 조회 (타운 제외)
- */
-export function getFieldMaps(): MapInfo[] {
-  return Array.from(mapRegistry.values()).filter((map) => !map.isTown);
+export function getAllMaps(): MapData[] {
+  return Object.values(MAPS);
 }
 
-/**
- * 맵 개수 조회
- */
 export function getMapCount(): number {
-  return mapRegistry.size;
+  return Object.keys(MAPS).length;
 }

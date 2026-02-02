@@ -4,3 +4,4 @@
 
 export * from './maps';
 export * from './mobs';
+export * from './items';

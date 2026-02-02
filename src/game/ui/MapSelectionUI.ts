@@ -130,9 +130,9 @@ export class MapSelectionUI extends Container {
 
     // Group maps by streetName > mapMark
     const grouped = this.groupMapsByRegion(maps);
-    
+
     let currentY = startY;
-    
+
     for (const [streetName, mapMarkGroups] of grouped.entries()) {
       // Street name header
       const streetHeader = this.createStreetHeader(streetName);
@@ -311,8 +311,11 @@ export class MapSelectionUI extends Container {
     container.addChild(nameText);
 
     // Level range
+    const levelRange = map.recommendedLevel
+      ? `Lv.${map.recommendedLevel.min}-${map.recommendedLevel.max}`
+      : 'Lv.?';
     const levelText = new Text({
-      text: `Lv.${map.recommendedLevel.min}-${map.recommendedLevel.max}`,
+      text: levelRange,
       style: {
         fontSize: 14,
         fill: 0xaaaaaa,
@@ -324,7 +327,7 @@ export class MapSelectionUI extends Container {
     container.addChild(levelText);
 
     // Monster list
-    const mobNames = map.spawns.normal.mobs
+    const mobNames = (map.spawns?.normal.mobs ?? [])
       .map((spawn) => {
         const mob = getMobById(spawn.mobId);
         return mob ? mob.name : null;

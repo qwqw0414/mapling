@@ -1,4 +1,4 @@
-import { create } from 'zustand';
+import { createStore } from 'zustand/vanilla';
 import type { Item, Equipment, EquipItem, EquipSlot, InventorySlot } from '@/types/item';
 
 // ============================================================================
@@ -54,7 +54,7 @@ const initialState: InventoryStoreState = {
 // Inventory Store
 // ============================================================================
 
-export const useInventoryStore = create<InventoryStore>((set, get) => ({
+export const useInventoryStore = createStore<InventoryStore>((set, get) => ({
   ...initialState,
 
   equipItem: (item) => {
@@ -131,8 +131,8 @@ export const useInventoryStore = create<InventoryStore>((set, get) => ({
             slot.quantity === quantity
               ? s[inventoryKey].filter((_, i) => i !== slotIndex)
               : s[inventoryKey].map((s, i) =>
-                  i === slotIndex ? { ...s, quantity: s.quantity - quantity } : s
-                ),
+                i === slotIndex ? { ...s, quantity: s.quantity - quantity } : s
+              ),
         }));
 
         return true;

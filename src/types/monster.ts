@@ -8,10 +8,13 @@
 export interface MobData {
   id: number;
   name: string;
+  nameEn?: string;
+  description?: string;
   meta: MobMeta;
-  canJump: boolean;
-  meso: MesoDrop;
+  canJump?: boolean;
+  meso?: MesoDrop;
   drops: MobDrop[];
+  foundAt?: number[];
 }
 
 /**
@@ -48,6 +51,8 @@ export interface MobDrop {
   itemId: number;
   name?: string;
   chance: number;
+  minQuantity?: number;
+  maxQuantity?: number;
 }
 
 // ============================================================================

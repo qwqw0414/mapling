@@ -152,7 +152,7 @@ export class MonsterSystem {
 
     const speedMultiplier = 1 + (mob.meta.speed / 100);
     const moveSpeed = MONSTER_BEHAVIOR_CONFIG.BASE_MOVE_SPEED * Math.max(0.3, speedMultiplier);
-    const canJump = mob.canJump;
+    const canJump = mob.canJump ?? false;
 
     const state: MonsterState = {
       instanceId,
@@ -165,7 +165,7 @@ export class MonsterSystem {
       maxHp: mob.meta.maxHp,
       spawnTime: Date.now(),
       action: 'idle',
-      actionTimer: this.getRandomActionTime(),
+      actionTimer: this.getRandomActionTime('idle'),
       velocityY: 0,
       isJumping: false,
       direction: Math.random() < 0.5 ? -1 : 1,
@@ -354,7 +354,7 @@ export class MonsterSystem {
         monster.actionTimer -= deltaTime * 16.67;
         if (monster.actionTimer <= 0 && !monster.isJumping) {
           monster.action = this.getRandomAction(monster.canJump);
-          monster.actionTimer = this.getRandomActionTime();
+          monster.actionTimer = this.getRandomActionTime(monster.action);
 
           if (monster.action === 'jump' && monster.canJump) {
             monster.isJumping = true;
@@ -395,7 +395,7 @@ export class MonsterSystem {
           monster.isJumping = false;
           monster.velocityY = 0;
           monster.action = 'idle';
-          monster.actionTimer = this.getRandomActionTime();
+          monster.actionTimer = this.getRandomActionTime('idle');
         }
       }
 
@@ -479,22 +479,37 @@ export class MonsterSystem {
   // Helper Methods
   // ============================================================================
 
-  private getRandomActionTime(): number {
-    const { ACTION_CHANGE_MIN, ACTION_CHANGE_MAX } = MONSTER_BEHAVIOR_CONFIG;
-    return ACTION_CHANGE_MIN + Math.random() * (ACTION_CHANGE_MAX - ACTION_CHANGE_MIN);
+  private getRandomActionTime(action: MonsterAction): number {
+    // Different duration ranges for each action type
+    switch (action) {
+      case 'idle':
+        // Idle: 1.5s ~ 4s (longer idle time for natural pauses)
+        return 1500 + Math.random() * 2500;
+      case 'moveLeft':
+      case 'moveRight':
+        // Movement: 1s ~ 2.5s (moderate walking time)
+        return 1000 + Math.random() * 1500;
+      case 'jump':
+        // Jump duration is controlled by physics, but set timer for next action
+        return 800 + Math.random() * 1200;
+      default:
+        return 1500 + Math.random() * 1500;
+    }
   }
 
   private getRandomAction(canJump: boolean): MonsterAction {
     const rand = Math.random();
 
     if (canJump) {
-      if (rand < 0.25) return 'idle';
-      if (rand < 0.5) return 'moveLeft';
-      if (rand < 0.75) return 'moveRight';
+      // Jump-capable monsters: idle 35%, moveLeft 27.5%, moveRight 27.5%, jump 10%
+      if (rand < 0.35) return 'idle';
+      if (rand < 0.625) return 'moveLeft';
+      if (rand < 0.90) return 'moveRight';
       return 'jump';
     } else {
-      if (rand < 0.33) return 'idle';
-      if (rand < 0.66) return 'moveLeft';
+      // Non-jumping monsters: idle 35%, moveLeft 32.5%, moveRight 32.5%
+      if (rand < 0.35) return 'idle';
+      if (rand < 0.675) return 'moveLeft';
       return 'moveRight';
     }
   }

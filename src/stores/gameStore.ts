@@ -1,4 +1,4 @@
-import { create } from 'zustand';
+import { createStore } from 'zustand/vanilla';
 
 // ============================================================================
 // Game State Types
@@ -38,7 +38,7 @@ const initialState: GameStoreState = {
 // Game Store
 // ============================================================================
 
-export const useGameStore = create<GameStore>((set) => ({
+export const useGameStore = createStore<GameStore>((set) => ({
   ...initialState,
 
   setGameState: (state) => set({ currentState: state }),

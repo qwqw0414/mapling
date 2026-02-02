@@ -1,4 +1,4 @@
-import { create } from 'zustand';
+import { createStore } from 'zustand/vanilla';
 import type { CharacterState, JobId, Stats } from '@/types/character';
 
 // ============================================================================
@@ -60,7 +60,7 @@ const createInitialCharacter = (name: string): CharacterState => ({
 // Character Store
 // ============================================================================
 
-export const useCharacterStore = create<CharacterStore>((set, get) => ({
+export const useCharacterStore = createStore<CharacterStore>((set, get) => ({
   ...initialState,
 
   createCharacter: (name) =>

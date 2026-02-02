@@ -185,6 +185,7 @@ export const LAYOUT_CONFIG = {
     PADDING: 10,
     SLOT_GAP: 15,
     MAX_SLOTS: 4,
+    INVENTORY_WIDTH: 220, // 인벤토리 고정 너비
   },
 
   // 사냥 필드 영역
@@ -235,4 +236,34 @@ export const SLOT_CONFIG = {
     PLUS_COLOR: 0x666666,
     PLUS_SIZE: 40,
   },
+} as const;
+
+// ============================================================================
+// Inventory Configuration
+// ============================================================================
+
+export const INVENTORY_CONFIG = {
+  // 탭 영역
+  TAB_HEIGHT: 32,
+  TAB_PADDING: 4,
+
+  // 그리드 설정
+  GRID_COLUMNS: 5,
+  GRID_ROWS: 5,
+  SLOT_SIZE: 36,
+  SLOT_GAP: 2,
+
+  // 레이아웃
+  PADDING: 8,
+
+  // 스타일
+  BACKGROUND_COLOR: 0x1a1a1a,
+  BORDER_COLOR: 0x333333,
+  TAB_ACTIVE_COLOR: 0x4488ff,
+  TAB_INACTIVE_COLOR: 0x444444,
+  SLOT_BACKGROUND_COLOR: 0x222222,
+  SLOT_BORDER_COLOR: 0x444444,
+
+  // 메소 표시
+  MESO_COLOR: 0xFFD700,
 } as const;

@@ -18,9 +18,13 @@ import { FieldView } from '@/game/systems/FieldView';
 import { PartySlot } from '@/game/ui/PartySlot';
 import { CharacterCreationUI } from '@/game/ui/CharacterCreationUI';
 import { MapSelectionUI } from '@/game/ui/MapSelectionUI';
+import { InventoryUI } from '@/game/ui/InventoryUI';
+import { useCharacterStore } from '@/stores/characterStore';
+import { useInventoryStore } from '@/stores/inventoryStore';
 import type { MapInfo } from '@/types/map';
 import type { PartyCharacter } from '@/types/party';
 import type { Stats } from '@/types/character';
+import type { ItemCategory } from '@/types/item';
 
 // ============================================================================
 // Types
@@ -29,6 +33,8 @@ import type { Stats } from '@/types/character';
 interface LayoutDimensions {
   header: { x: number; y: number; width: number; height: number };
   party: { x: number; y: number; width: number; height: number };
+  partySlots: { x: number; y: number; width: number; height: number };
+  inventory: { x: number; y: number; width: number; height: number };
   field: { x: number; y: number; width: number; height: number };
   log: { x: number; y: number; width: number; height: number };
 }
@@ -64,11 +70,15 @@ export class MainScene extends BaseScene {
 
   // UI elements
   private mapTitleText: Text | null = null;
-  private mesoText: Text | null = null;
   private partySlots: PartySlot[] = [];
   private createCharacterButton: Container | null = null;
   private characterCreationUI: CharacterCreationUI | null = null;
   private mapSelectionUI: MapSelectionUI | null = null;
+  private inventoryUI: InventoryUI | null = null;
+
+  // Party area sub-containers
+  private partySlotsContainer!: Container;
+  private inventoryContainer!: Container;
 
   // Party data
   private partyCharacters: Array<PartyCharacter | null> = [];
@@ -131,9 +141,15 @@ export class MainScene extends BaseScene {
     const logHeight = Math.floor((height - headerHeight) * LAYOUT_CONFIG.LOG_AREA.HEIGHT_RATIO);
     const fieldHeight = height - headerHeight - partyHeight - logHeight;
 
+    // Inventory fixed width, party slots take remaining space
+    const inventoryWidth = LAYOUT_CONFIG.PARTY_AREA.INVENTORY_WIDTH;
+    const partySlotsWidth = width - inventoryWidth;
+
     this.layout = {
       header: { x: 0, y: 0, width: width, height: headerHeight },
       party: { x: 0, y: headerHeight, width: width, height: partyHeight },
+      partySlots: { x: 0, y: 0, width: partySlotsWidth, height: partyHeight },
+      inventory: { x: partySlotsWidth, y: 0, width: inventoryWidth, height: partyHeight },
       field: { x: 0, y: headerHeight + partyHeight, width: width, height: fieldHeight },
       log: { x: 0, y: headerHeight + partyHeight + fieldHeight, width: width, height: logHeight },
     };
@@ -221,7 +237,7 @@ export class MainScene extends BaseScene {
     );
     this.dropSystem.setItemPickupSound(this.itemPickupSound);
     this.dropSystem.setCallbacks({
-      onMesoGain: (amount) => this.logSystem.logMesoGain(amount),
+      onMesoGain: (amount) => this.onMesoGain(amount),
       onItemDrop: (itemName) => this.logSystem.logItemDrop(itemName),
       onDividerEffect: () => this.playDividerEffect(),
     });
@@ -262,20 +278,6 @@ export class MainScene extends BaseScene {
     this.mapTitleText.on('pointerdown', () => this.openMapSelection());
     this.headerLayer.addChild(this.mapTitleText);
 
-    this.mesoText = new Text({
-      text: '메소: 0',
-      style: {
-        fontSize: 16,
-        fill: 0xFFD700,
-        fontFamily: 'Arial',
-        dropShadow: { color: 0x000000, blur: 2, distance: 1 },
-      },
-    });
-    this.mesoText.anchor.set(1, 0.5);
-    this.mesoText.x = this.layout.header.width - padding;
-    this.mesoText.y = this.layout.header.height / 2;
-    this.headerLayer.addChild(this.mesoText);
-
     this.updateAddCharacterButton();
   }
 
@@ -292,8 +294,8 @@ export class MainScene extends BaseScene {
 
       this.createCharacterButton = this.createSmallAddButton();
 
-      const mesoTextLeft = this.mesoText ? this.mesoText.x - this.mesoText.width : this.layout.header.width - padding;
-      this.createCharacterButton.x = mesoTextLeft - 40;
+      // Position on the right side of header
+      this.createCharacterButton.x = this.layout.header.width - padding - 32;
       this.createCharacterButton.y = (this.layout.header.height - 32) / 2;
 
       this.headerLayer.addChild(this.createCharacterButton);
@@ -305,14 +307,27 @@ export class MainScene extends BaseScene {
   // ============================================================================
 
   private createPartyArea(): void {
+    // Create sub-containers for party slots and inventory
+    this.partySlotsContainer = new Container();
+    this.partySlotsContainer.x = this.layout.partySlots.x;
+    this.partySlotsContainer.y = this.layout.partySlots.y;
+    this.partyLayer.addChild(this.partySlotsContainer);
+
+    this.inventoryContainer = new Container();
+    this.inventoryContainer.x = this.layout.inventory.x;
+    this.inventoryContainer.y = this.layout.inventory.y;
+    this.partyLayer.addChild(this.inventoryContainer);
+
     this.renderPartySlots();
+    this.createInventoryUI();
   }
 
   private renderPartySlots(): void {
     this.clearPartySlots();
 
     const padding = LAYOUT_CONFIG.PARTY_AREA.PADDING;
-    const availableHeight = this.layout.party.height - padding * 2;
+    const availableHeight = this.layout.partySlots.height - padding * 2;
+    const availableWidth = this.layout.partySlots.width;
 
     const slotWidth = SLOT_CONFIG.MIN_WIDTH;
     const slotHeight = Math.max(SLOT_CONFIG.MIN_HEIGHT, availableHeight);
@@ -320,12 +335,12 @@ export class MainScene extends BaseScene {
 
     if (this.partyCharacters.length === 0) {
       this.createCharacterButton = this.createAddCharacterButton(slotWidth, slotHeight, true);
-      this.createCharacterButton.x = (this.layout.party.width - slotWidth) / 2;
+      this.createCharacterButton.x = (availableWidth - slotWidth) / 2;
       this.createCharacterButton.y = padding;
-      this.partyLayer.addChild(this.createCharacterButton);
+      this.partySlotsContainer.addChild(this.createCharacterButton);
     } else {
       const totalWidth = this.partyCharacters.length * slotWidth + (this.partyCharacters.length - 1) * slotGap;
-      const startX = (this.layout.party.width - totalWidth) / 2;
+      const startX = (availableWidth - totalWidth) / 2;
       const startY = padding;
 
       for (let i = 0; i < this.partyCharacters.length; i++) {
@@ -338,7 +353,7 @@ export class MainScene extends BaseScene {
 
         slot.x = startX + i * (slotWidth + slotGap);
         slot.y = startY;
-        this.partyLayer.addChild(slot);
+        this.partySlotsContainer.addChild(slot);
         this.partySlots.push(slot);
       }
     }
@@ -348,13 +363,15 @@ export class MainScene extends BaseScene {
 
   private clearPartySlots(): void {
     for (const slot of this.partySlots) {
-      this.partyLayer.removeChild(slot);
+      if (slot.parent) {
+        slot.parent.removeChild(slot);
+      }
       slot.destroy();
     }
     this.partySlots = [];
 
-    if (this.createCharacterButton && this.createCharacterButton.parent === this.partyLayer) {
-      this.partyLayer.removeChild(this.createCharacterButton);
+    if (this.createCharacterButton && this.createCharacterButton.parent) {
+      this.createCharacterButton.parent.removeChild(this.createCharacterButton);
       this.createCharacterButton.destroy();
       this.createCharacterButton = null;
     }
@@ -522,6 +539,89 @@ export class MainScene extends BaseScene {
       console.log(`[MainScene] Character slot ${slotIndex} clicked: [name]=[${character.name}]`);
     } else {
       console.log(`[MainScene] Empty slot ${slotIndex} clicked`);
+    }
+  }
+
+  // ============================================================================
+  // Meso & Item Callbacks
+  // ============================================================================
+
+  private onMesoGain(amount: number): void {
+    // Add to store
+    useCharacterStore.getState().addMeso(amount);
+
+    // Update inventory UI
+    const currentMeso = useCharacterStore.getState().meso;
+    this.updateInventoryMeso(currentMeso);
+
+    // Log the gain
+    this.logSystem.logMesoGain(amount);
+  }
+
+  // ============================================================================
+  // Inventory UI
+  // ============================================================================
+
+  private createInventoryUI(): void {
+    const padding = LAYOUT_CONFIG.PARTY_AREA.PADDING;
+
+    this.inventoryUI = new InventoryUI({
+      width: this.layout.inventory.width - padding,
+      height: this.layout.inventory.height - padding * 2,
+      onTabChange: (tab) => this.onInventoryTabChange(tab),
+      onSlotClick: (index, item) => this.onInventorySlotClick(index, item),
+    });
+
+    this.inventoryUI.x = padding / 2;
+    this.inventoryUI.y = padding;
+    this.inventoryContainer.addChild(this.inventoryUI);
+
+    // Initialize with current meso
+    const meso = useCharacterStore.getState().meso;
+    this.inventoryUI.updateMeso(meso);
+
+    // Load initial items for equip tab
+    this.loadInventoryItems('equip');
+  }
+
+  private onInventoryTabChange(tab: 'equip' | 'use' | 'etc'): void {
+    console.log(`[MainScene] Inventory tab changed: [tab]=[${tab}]`);
+    this.loadInventoryItems(tab);
+  }
+
+  private loadInventoryItems(category: ItemCategory): void {
+    if (!this.inventoryUI) return;
+
+    const inventoryStore = useInventoryStore.getState();
+
+    const inventoryMap = {
+      equip: inventoryStore.equipInventory,
+      use: inventoryStore.useInventory,
+      etc: inventoryStore.etcInventory,
+    };
+
+    const items = inventoryMap[category] ?? [];
+    this.inventoryUI.updateItems(items);
+  }
+
+  private onInventorySlotClick(index: number, item: unknown): void {
+    if (item) {
+      console.log(`[MainScene] Inventory slot ${index} clicked with item`);
+    } else {
+      console.log(`[MainScene] Empty inventory slot ${index} clicked`);
+    }
+  }
+
+  public updateInventoryMeso(amount: number): void {
+    if (this.inventoryUI) {
+      this.inventoryUI.updateMeso(amount);
+    }
+  }
+
+  public refreshInventory(): void {
+    if (this.inventoryUI) {
+      const currentTab = this.inventoryUI.getTab();
+      this.loadInventoryItems(currentTab);
     }
   }
 
@@ -856,13 +956,23 @@ export class MainScene extends BaseScene {
 
     this.updateDebugBorders();
 
-    if (this.mesoText) {
-      this.mesoText.x = this.layout.header.width - LAYOUT_CONFIG.HEADER.PADDING;
-    }
+    // Update party area sub-containers
+    this.partySlotsContainer.x = this.layout.partySlots.x;
+    this.inventoryContainer.x = this.layout.inventory.x;
+
     this.updateAddCharacterButton();
 
     this.renderPartySlots();
     this.updatePartyFieldDivider();
+
+    // Resize inventory UI
+    if (this.inventoryUI) {
+      const padding = LAYOUT_CONFIG.PARTY_AREA.PADDING;
+      this.inventoryUI.resize(
+        this.layout.inventory.width - padding,
+        this.layout.inventory.height - padding * 2
+      );
+    }
 
     this.fieldView.updateFieldDimensions(this.layout.field.width, this.layout.field.height);
     this.monsterSystem.setFieldDimensions(this.layout.field.width, this.layout.field.height);
@@ -888,6 +998,11 @@ export class MainScene extends BaseScene {
     if (this.mapSelectionUI) {
       this.mapSelectionUI.destroy();
       this.mapSelectionUI = null;
+    }
+
+    if (this.inventoryUI) {
+      this.inventoryUI.destroy();
+      this.inventoryUI = null;
     }
 
     await super.destroy();

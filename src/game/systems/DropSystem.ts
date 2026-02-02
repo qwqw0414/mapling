@@ -55,13 +55,8 @@ export class DropSystem {
       return;
     }
 
-    const variance = 0.2;
-    const minAmount = Math.floor(meso.amount * (1 - variance));
-    const maxAmount = Math.ceil(meso.amount * (1 + variance));
-    const amount = Math.floor(Math.random() * (maxAmount - minAmount + 1)) + minAmount;
-
     if (this.onMesoGainCallback) {
-      this.onMesoGainCallback(amount);
+      this.onMesoGainCallback(meso.amount);
     }
   }
 

@@ -1,5 +1,5 @@
 import { GAME_CONFIG } from '@/constants/config';
-import type { MonsterInfo } from '@/types/monster';
+import type { MobData } from '@/types/monster';
 import type { Item } from '@/types/item';
 import type { MapInfo } from '@/types/map';
 
@@ -39,7 +39,7 @@ export class MapleStoryAPI {
     minLevel?: number;
     maxLevel?: number;
     count?: number;
-  }): Promise<MonsterInfo[]> {
+  }): Promise<MobData[]> {
     const query = new URLSearchParams();
     if (params.name) query.set('searchFor', params.name);
     if (params.minLevel) query.set('minLevelFilter', params.minLevel.toString());
@@ -51,7 +51,7 @@ export class MapleStoryAPI {
     return response.json();
   }
 
-  async getMobInfo(mobId: number): Promise<MonsterInfo> {
+  async getMobInfo(mobId: number): Promise<MobData> {
     const url = this.buildUrl(`/mob/${mobId}`);
     const response = await fetch(url);
     return response.json();

@@ -1,5 +1,8 @@
 # Mapling - 개발 히스토리
 
+[2026-02-02] MainScene 대규모 리팩토링: 2008줄→850줄, MonsterSystem/DamageSystem/DropSystem/LogSystem/FieldView로 분리
+[2026-02-02] Scene 정리: 미사용 HuntingScene(1243줄)/TownScene(34줄) 삭제, MainScene만 유지
+[2026-02-02] 타입 오류 수정: MonsterInfo → MobData (monster.ts 실제 export 타입과 일치)
 [2026-01-30] 맵 데이터 재구성: 몬스터 중복 제거, 개미굴/지하철/불타는산 추가, 총 9맵 18몬스터로 정리
 [2026-01-30] 맵 데이터 검증/수정: API 기반 BGM 및 스폰 몬스터 검증, MapInfo 타입 isTown 필드 추가
 [2026-01-30] 맵 선택 UI 스크롤: 마우스 휠 스크롤 기능, 마스크 처리, 패널 높이 600px로 증가

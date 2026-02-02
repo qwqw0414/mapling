@@ -1,5 +1,19 @@
 # Mapling - 개발 히스토리
 
+[2026-02-02] docs/SCRIPTS_GUIDE.md 생성: fetch 스크립트 사용법/옵션 가이드
+[2026-02-02] 모든 스크립트에 --skip-existing 옵션 추가 (기존 파일 스킵)
+[2026-02-02] API 버전 GMS/220 -> GMS/62 통일 (빅뱅 이전 버전, 모든 스크립트 및 JSON 반영)
+[2026-02-02] fetch-map-all.ts: 맵ID로 맵+몬스터+드롭아이템 일괄 생성 (npm run fetch-map-all --map=ID)
+[2026-02-02] fetch-mobs.ts 스크립트: API(스탯)+DB(드롭) 병합, 검색/ID/범위 지원 (npm run fetch-mobs)
+[2026-02-02] fetch-maps.ts 스크립트: API 기반 맵 검색/저장 도구 (npm run fetch-maps --search="지역명")
+[2026-02-02] fetch-items.ts WZ API 추가: 소비 아이템 effect 필드 (포션 hp/hpR, 주문서 success/incPDD, 표창 attackPower)
+[2026-02-02] fetch-items.ts DB+API+WZ 병합: DB(한글/가격/스탯) + API(분류/영문명) + WZ(소비효과)
+[2026-02-02] 아이템 데이터 스키마 확장: setup/cash 타입 추가, subCategory/upgradeSlots/icon/only/quest/isCash 필드 추가
+[2026-02-02] 아이템 타입 명칭 변경: consume → use (API 응답 overallCategory "Use"와 일치)
+[2026-02-02] 아이템 데이터 폴더 구조화: equip/use/setup/etc/cash 폴더 구조, import.meta.glob 패턴 업데이트
+[2026-02-02] 아이템 데이터 API 동기화: 전체 44종 아이템을 MapleStory.IO API에서 조회하여 정확한 정보로 업데이트 (가격/능력치/설명/타입 등)
+[2026-02-02] 아이템 자동 로드: import.meta.glob 사용, JSON 추가만으로 자동 등록되도록 개선
+[2026-02-02] 인벤토리 UI 추가: 파티영역 고정너비 인벤토리(220px), 좌측 파티슬롯/우측 가방, 탭(장비/소비/기타)+메소+동적그리드 스크롤
 [2026-02-02] MainScene 대규모 리팩토링: 2008줄→850줄, MonsterSystem/DamageSystem/DropSystem/LogSystem/FieldView로 분리
 [2026-02-02] Scene 정리: 미사용 HuntingScene(1243줄)/TownScene(34줄) 삭제, MainScene만 유지
 [2026-02-02] 타입 오류 수정: MonsterInfo → MobData (monster.ts 실제 export 타입과 일치)

@@ -5,11 +5,14 @@ import type { Item, Equipment, EquipItem, EquipSlot, InventorySlot } from '@/typ
 // Inventory Store Types
 // ============================================================================
 
+// Fixed-size inventory array with null for empty slots
+type InventoryArray = (InventorySlot | null)[];
+
 interface InventoryStoreState {
   equipment: Equipment;
-  equipInventory: InventorySlot[];
-  useInventory: InventorySlot[];
-  etcInventory: InventorySlot[];
+  equipInventory: InventoryArray;
+  useInventory: InventoryArray;
+  etcInventory: InventoryArray;
   maxSlots: number;
 }
 
@@ -20,14 +23,34 @@ interface InventoryStoreActions {
   removeItem: (itemId: number, quantity?: number) => boolean;
   getItem: (itemId: number) => InventorySlot | undefined;
   hasItem: (itemId: number, quantity?: number) => boolean;
+  swapItems: (category: 'equip' | 'use' | 'etc', fromIndex: number, toIndex: number) => void;
+  getInventoryItems: (category: 'equip' | 'use' | 'etc') => InventorySlot[];
   reset: () => void;
 }
 
 type InventoryStore = InventoryStoreState & InventoryStoreActions;
 
 // ============================================================================
+// Helper Functions
+// ============================================================================
+
+function createEmptyInventory(size: number): InventoryArray {
+  return new Array(size).fill(null);
+}
+
+function findFirstEmptySlot(inventory: InventoryArray): number {
+  return inventory.findIndex((slot) => slot === null);
+}
+
+function findItemSlot(inventory: InventoryArray, itemId: number): number {
+  return inventory.findIndex((slot) => slot !== null && slot.item.id === itemId);
+}
+
+// ============================================================================
 // Initial State
 // ============================================================================
+
+const MAX_SLOTS = 24;
 
 const initialEquipment: Equipment = {
   weapon: null,
@@ -44,10 +67,10 @@ const initialEquipment: Equipment = {
 
 const initialState: InventoryStoreState = {
   equipment: { ...initialEquipment },
-  equipInventory: [],
-  useInventory: [],
-  etcInventory: [],
-  maxSlots: 24,
+  equipInventory: createEmptyInventory(MAX_SLOTS),
+  useInventory: createEmptyInventory(MAX_SLOTS),
+  etcInventory: createEmptyInventory(MAX_SLOTS),
+  maxSlots: MAX_SLOTS,
 };
 
 // ============================================================================
@@ -61,10 +84,19 @@ export const useInventoryStore = createStore<InventoryStore>((set, get) => ({
     const state = get();
     const previousItem = state.equipment[item.slot];
 
-    set((s) => ({
-      equipment: { ...s.equipment, [item.slot]: item },
-      equipInventory: s.equipInventory.filter((slot) => slot.item.id !== item.id),
-    }));
+    // Find and remove item from inventory
+    const slotIndex = findItemSlot(state.equipInventory, item.id);
+
+    set((s) => {
+      const newInventory = [...s.equipInventory];
+      if (slotIndex !== -1) {
+        newInventory[slotIndex] = null;
+      }
+      return {
+        equipment: { ...s.equipment, [item.slot]: item },
+        equipInventory: newInventory,
+      };
+    });
 
     return previousItem;
   },
@@ -74,43 +106,60 @@ export const useInventoryStore = createStore<InventoryStore>((set, get) => ({
     const item = state.equipment[slot];
     if (!item) return false;
 
-    if (state.equipInventory.length >= state.maxSlots) return false;
+    const emptySlot = findFirstEmptySlot(state.equipInventory);
+    if (emptySlot === -1) return false;
 
-    set((s) => ({
-      equipment: { ...s.equipment, [slot]: null },
-      equipInventory: [...s.equipInventory, { item, quantity: 1 }],
-    }));
+    set((s) => {
+      const newInventory = [...s.equipInventory];
+      newInventory[emptySlot] = { item, quantity: 1 };
+      return {
+        equipment: { ...s.equipment, [slot]: null },
+        equipInventory: newInventory,
+      };
+    });
 
     return true;
   },
 
   addItem: (item, quantity = 1) => {
     const state = get();
-    const inventory =
+    const inventoryKey =
       item.category === 'equip'
         ? 'equipInventory'
         : item.category === 'use'
           ? 'useInventory'
           : 'etcInventory';
 
-    const existingSlot = state[inventory].find((slot) => slot.item.id === item.id);
+    const inventory = state[inventoryKey];
 
-    if (existingSlot && item.category !== 'equip') {
-      set((s) => ({
-        [inventory]: s[inventory].map((slot) =>
-          slot.item.id === item.id
-            ? { ...slot, quantity: slot.quantity + quantity }
-            : slot
-        ),
-      }));
-      return true;
+    // For stackable items, try to find existing stack first
+    if (item.category !== 'equip') {
+      const existingSlotIndex = findItemSlot(inventory, item.id);
+      if (existingSlotIndex !== -1) {
+        set((s) => {
+          const newInventory = [...s[inventoryKey]];
+          const existing = newInventory[existingSlotIndex];
+          if (existing) {
+            newInventory[existingSlotIndex] = {
+              ...existing,
+              quantity: existing.quantity + quantity,
+            };
+          }
+          return { [inventoryKey]: newInventory };
+        });
+        return true;
+      }
     }
 
-    if (state[inventory].length >= state.maxSlots) return false;
+    // Find first empty slot
+    const emptySlot = findFirstEmptySlot(inventory);
+    if (emptySlot === -1) return false;
 
-    set((s) => ({
-      [inventory]: [...s[inventory], { item, quantity }],
-    }));
+    set((s) => {
+      const newInventory = [...s[inventoryKey]];
+      newInventory[emptySlot] = { item, quantity };
+      return { [inventoryKey]: newInventory };
+    });
 
     return true;
   },
@@ -120,20 +169,24 @@ export const useInventoryStore = createStore<InventoryStore>((set, get) => ({
 
     for (const inventoryKey of ['equipInventory', 'useInventory', 'etcInventory'] as const) {
       const inventory = state[inventoryKey];
-      const slotIndex = inventory.findIndex((slot) => slot.item.id === itemId);
+      const slotIndex = findItemSlot(inventory, itemId);
 
       if (slotIndex !== -1) {
         const slot = inventory[slotIndex];
-        if (slot.quantity < quantity) return false;
+        if (!slot || slot.quantity < quantity) return false;
 
-        set((s) => ({
-          [inventoryKey]:
-            slot.quantity === quantity
-              ? s[inventoryKey].filter((_, i) => i !== slotIndex)
-              : s[inventoryKey].map((s, i) =>
-                i === slotIndex ? { ...s, quantity: s.quantity - quantity } : s
-              ),
-        }));
+        set((s) => {
+          const newInventory = [...s[inventoryKey]];
+          if (slot.quantity === quantity) {
+            newInventory[slotIndex] = null;
+          } else {
+            newInventory[slotIndex] = {
+              ...slot,
+              quantity: slot.quantity - quantity,
+            };
+          }
+          return { [inventoryKey]: newInventory };
+        });
 
         return true;
       }
@@ -145,7 +198,7 @@ export const useInventoryStore = createStore<InventoryStore>((set, get) => ({
   getItem: (itemId) => {
     const state = get();
     for (const inventoryKey of ['equipInventory', 'useInventory', 'etcInventory'] as const) {
-      const slot = state[inventoryKey].find((s) => s.item.id === itemId);
+      const slot = state[inventoryKey].find((s) => s !== null && s.item.id === itemId);
       if (slot) return slot;
     }
     return undefined;
@@ -156,5 +209,61 @@ export const useInventoryStore = createStore<InventoryStore>((set, get) => ({
     return slot !== undefined && slot.quantity >= quantity;
   },
 
-  reset: () => set(initialState),
+  swapItems: (category, fromIndex, toIndex) => {
+    const inventoryKey =
+      category === 'equip'
+        ? 'equipInventory'
+        : category === 'use'
+          ? 'useInventory'
+          : 'etcInventory';
+
+    set((state) => {
+      const inventory = [...state[inventoryKey]];
+      const maxSlots = state.maxSlots;
+
+      // Validate indices
+      if (fromIndex < 0 || toIndex < 0 || fromIndex >= maxSlots || toIndex >= maxSlots) {
+        return state;
+      }
+
+      // Same position, nothing to do
+      if (fromIndex === toIndex) {
+        return state;
+      }
+
+      // fromIndex must have an item
+      if (inventory[fromIndex] === null) {
+        return state;
+      }
+
+      // Swap (works with null too)
+      const temp = inventory[fromIndex];
+      inventory[fromIndex] = inventory[toIndex];
+      inventory[toIndex] = temp;
+
+      return {
+        [inventoryKey]: inventory,
+      };
+    });
+  },
+
+  // Get non-null items as array (for compatibility)
+  getInventoryItems: (category) => {
+    const state = get();
+    const inventoryKey =
+      category === 'equip'
+        ? 'equipInventory'
+        : category === 'use'
+          ? 'useInventory'
+          : 'etcInventory';
+
+    return state[inventoryKey].filter((slot): slot is InventorySlot => slot !== null);
+  },
+
+  reset: () => set({
+    ...initialState,
+    equipInventory: createEmptyInventory(MAX_SLOTS),
+    useInventory: createEmptyInventory(MAX_SLOTS),
+    etcInventory: createEmptyInventory(MAX_SLOTS),
+  }),
 }));

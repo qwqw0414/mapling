@@ -1,6 +1,7 @@
-import { Container, Graphics, Text } from 'pixi.js';
+import { Container, Graphics, Text, Sprite, Texture, FederatedPointerEvent } from 'pixi.js';
 import { INVENTORY_CONFIG } from '@/constants/config';
-import type { InventorySlot } from '@/types/item';
+import { AssetManager } from '@/game/systems/AssetManager';
+import type { InventorySlot, ItemCategory } from '@/types/item';
 
 // ============================================================================
 // Types
@@ -13,6 +14,7 @@ interface InventoryUIOptions {
   height: number;
   onTabChange?: (tab: InventoryTab) => void;
   onSlotClick?: (slotIndex: number, item: InventorySlot | null) => void;
+  onItemSwap?: (category: ItemCategory, fromIndex: number, toIndex: number) => void;
 }
 
 interface TabButton {
@@ -45,7 +47,7 @@ export class InventoryUI extends Container {
   // State
   private currentTab: InventoryTab = 'equip';
   private currentMeso: number = 0;
-  private items: InventorySlot[] = [];
+  private items: (InventorySlot | null)[] = [];
   private slotGraphics: Graphics[] = [];
   private scrollY: number = 0;
   private maxScrollY: number = 0;
@@ -54,9 +56,19 @@ export class InventoryUI extends Container {
   // Tab buttons
   private tabButtons: TabButton[] = [];
 
+  // Tooltip
+  private tooltip: Container | null = null;
+
+  // Drag and Drop
+  private isDragging: boolean = false;
+  private dragStartIndex: number = -1;
+  private dragGhost: Container | null = null;
+  private dragStartPos: { x: number; y: number } = { x: 0, y: 0 };
+
   // Callbacks
   private readonly onTabChangeCallback?: (tab: InventoryTab) => void;
   private readonly onSlotClickCallback?: (slotIndex: number, item: InventorySlot | null) => void;
+  private readonly onItemSwapCallback?: (category: ItemCategory, fromIndex: number, toIndex: number) => void;
 
   constructor(options: InventoryUIOptions) {
     super();
@@ -65,6 +77,7 @@ export class InventoryUI extends Container {
     this.uiHeight = options.height;
     this.onTabChangeCallback = options.onTabChange;
     this.onSlotClickCallback = options.onSlotClick;
+    this.onItemSwapCallback = options.onItemSwap;
 
     // Background
     this.background = new Graphics();
@@ -121,7 +134,7 @@ export class InventoryUI extends Container {
   /**
    * Update items for current tab
    */
-  public updateItems(items: InventorySlot[]): void {
+  public updateItems(items: (InventorySlot | null)[]): void {
     this.items = items;
     this.updateGridContent();
     this.updateScrollBounds();
@@ -359,7 +372,12 @@ export class InventoryUI extends Container {
 
       slot.eventMode = 'static';
       slot.cursor = 'pointer';
-      slot.on('pointerdown', () => this.onSlotClick(i));
+      slot.on('pointerdown', (e: FederatedPointerEvent) => this.onSlotPointerDown(i, e));
+      slot.on('pointerup', () => this.onSlotPointerUp(i));
+      slot.on('pointerupoutside', () => this.onDragEnd());
+      slot.on('pointerover', (e: FederatedPointerEvent) => this.onSlotPointerOver(i, e));
+      slot.on('pointerout', () => this.onSlotPointerOut());
+      slot.on('pointermove', (e: FederatedPointerEvent) => this.onSlotPointerMove(e));
 
       this.scrollContainer.addChild(slot);
       this.slotGraphics.push(slot);
@@ -384,25 +402,11 @@ export class InventoryUI extends Container {
       slot.clear();
       slot.roundRect(0, 0, slotSize, slotSize, 2);
       slot.fill({ color: INVENTORY_CONFIG.SLOT_BACKGROUND_COLOR });
-      slot.stroke({
-        color: item ? 0x6688ff : INVENTORY_CONFIG.SLOT_BORDER_COLOR,
-        width: 1,
-      });
+      slot.stroke({ color: INVENTORY_CONFIG.SLOT_BORDER_COLOR, width: 1 });
 
       if (item) {
-        // Item name (shortened)
-        const nameText = new Text({
-          text: item.item.name.substring(0, 4),
-          style: {
-            fontSize: 9,
-            fill: 0xFFFFFF,
-            fontFamily: 'Arial',
-          },
-        });
-        nameText.anchor.set(0.5, 0.5);
-        nameText.x = slotSize / 2;
-        nameText.y = slotSize / 2;
-        slot.addChild(nameText);
+        // Load and display item icon
+        this.loadItemIcon(slot, item, slotSize);
 
         // Stack count for use/etc items
         if (item.item.category !== 'equip' && item.quantity > 1) {
@@ -424,11 +428,486 @@ export class InventoryUI extends Container {
     }
   }
 
-  private onSlotClick(index: number): void {
-    const item = this.items[index] ?? null;
-    if (this.onSlotClickCallback) {
-      this.onSlotClickCallback(index, item);
+  private async loadItemIcon(slot: Graphics, inventorySlot: InventorySlot, slotSize: number): Promise<void> {
+    const assetManager = AssetManager.getInstance();
+    const iconBlob = await assetManager.getImage('item', inventorySlot.item.id, 'icon');
+
+    // Check if slot is still valid (might have been cleared during async load)
+    if (!slot.parent) return;
+
+    if (iconBlob) {
+      const img = new Image();
+      img.src = URL.createObjectURL(iconBlob);
+      await new Promise(resolve => { img.onload = resolve; });
+
+      // Check again after image load
+      if (!slot.parent) {
+        URL.revokeObjectURL(img.src);
+        return;
+      }
+
+      const texture = Texture.from(img);
+      const iconSprite = new Sprite(texture);
+      iconSprite.anchor.set(0.5);
+      iconSprite.x = slotSize / 2;
+      iconSprite.y = slotSize / 2;
+
+      // Scale to fit slot
+      const maxSize = slotSize - 4;
+      if (iconSprite.width > maxSize || iconSprite.height > maxSize) {
+        const scale = maxSize / Math.max(iconSprite.width, iconSprite.height);
+        iconSprite.scale.set(scale);
+      }
+
+      slot.addChildAt(iconSprite, 0);
+    } else {
+      // Fallback: show item name if icon not found
+      const nameText = new Text({
+        text: inventorySlot.item.name.substring(0, 4),
+        style: {
+          fontSize: 9,
+          fill: 0xFFFFFF,
+          fontFamily: 'Arial',
+        },
+      });
+      nameText.anchor.set(0.5, 0.5);
+      nameText.x = slotSize / 2;
+      nameText.y = slotSize / 2;
+      slot.addChildAt(nameText, 0);
     }
+  }
+
+  // ============================================================================
+  // Private Methods - Drag and Drop
+  // ============================================================================
+
+  private onSlotPointerDown(index: number, e: FederatedPointerEvent): void {
+    const item = this.items[index] ?? null;
+    if (!item) return;
+
+    this.dragStartIndex = index;
+    this.dragStartPos = { x: e.global.x, y: e.global.y };
+    this.hideTooltip();
+
+    // Add global event listeners for smooth dragging
+    this.on('globalpointermove', this.onGlobalPointerMove, this);
+    this.on('pointerup', this.onGlobalPointerUp, this);
+    this.on('pointerupoutside', this.onGlobalPointerUp, this);
+  }
+
+  private onGlobalPointerMove = (e: FederatedPointerEvent): void => {
+    if (this.isDragging) {
+      this.updateDragGhost(e.global.x, e.global.y);
+      this.updateDropTarget(e.global.x, e.global.y);
+    } else if (this.dragStartIndex !== -1) {
+      const dx = e.global.x - this.dragStartPos.x;
+      const dy = e.global.y - this.dragStartPos.y;
+      const distance = Math.sqrt(dx * dx + dy * dy);
+
+      if (distance > 5) {
+        this.startDrag(e.global.x, e.global.y);
+      }
+    }
+  };
+
+  private onGlobalPointerUp = (e: FederatedPointerEvent): void => {
+    if (this.isDragging && this.dragStartIndex !== -1) {
+      const dropIndex = this.getSlotIndexAtPosition(e.global.x, e.global.y);
+      if (dropIndex !== -1 && dropIndex !== this.dragStartIndex) {
+        if (this.onItemSwapCallback) {
+          this.onItemSwapCallback(this.currentTab, this.dragStartIndex, dropIndex);
+        }
+      }
+    } else if (!this.isDragging && this.dragStartIndex !== -1) {
+      // Regular click
+      const item = this.items[this.dragStartIndex] ?? null;
+      if (this.onSlotClickCallback) {
+        this.onSlotClickCallback(this.dragStartIndex, item);
+      }
+    }
+
+    this.onDragEnd();
+  };
+
+  private onSlotPointerUp(_index: number): void {
+    // Handled by global pointer up
+  }
+
+  private onSlotPointerOver(index: number, e: FederatedPointerEvent): void {
+    if (this.isDragging) {
+      this.highlightSlot(index, true);
+    } else if (!this.isDragging && this.dragStartIndex === -1) {
+      const item = this.items[index] ?? null;
+      if (item) {
+        this.showTooltip(item, e.global.x, e.global.y);
+      }
+    }
+  }
+
+  private onSlotPointerOut(): void {
+    if (!this.isDragging) {
+      this.hideTooltip();
+    }
+  }
+
+  private onSlotPointerMove(e: FederatedPointerEvent): void {
+    if (!this.isDragging && this.dragStartIndex === -1) {
+      this.updateTooltipPosition(e.global.x, e.global.y);
+    }
+  }
+
+  private startDrag(globalX: number, globalY: number): void {
+    const item = this.items[this.dragStartIndex];
+    if (!item) return;
+
+    this.isDragging = true;
+    this.hideTooltip();
+
+    // Create drag ghost
+    this.dragGhost = new Container();
+    this.dragGhost.alpha = 0.85;
+
+    const slotSize = INVENTORY_CONFIG.SLOT_SIZE;
+
+    // Ghost background
+    const bg = new Graphics();
+    bg.roundRect(0, 0, slotSize, slotSize, 2);
+    bg.fill({ color: 0x2a2a4a, alpha: 0.9 });
+    bg.stroke({ color: 0x66CCFF, width: 2 });
+    this.dragGhost.addChild(bg);
+
+    // Load and add item icon to ghost
+    this.loadDragGhostIcon(item, slotSize);
+
+    this.addChild(this.dragGhost);
+    this.updateDragGhost(globalX, globalY);
+
+    // Dim the original slot
+    const originalSlot = this.slotGraphics[this.dragStartIndex];
+    if (originalSlot) {
+      originalSlot.alpha = 0.3;
+    }
+  }
+
+  private async loadDragGhostIcon(inventorySlot: InventorySlot, slotSize: number): Promise<void> {
+    if (!this.dragGhost) return;
+
+    const assetManager = AssetManager.getInstance();
+    const iconBlob = await assetManager.getImage('item', inventorySlot.item.id, 'icon');
+
+    if (!this.dragGhost) return; // Check again after async
+
+    if (iconBlob) {
+      const img = new Image();
+      img.src = URL.createObjectURL(iconBlob);
+      await new Promise(resolve => { img.onload = resolve; });
+
+      if (!this.dragGhost) {
+        URL.revokeObjectURL(img.src);
+        return;
+      }
+
+      const texture = Texture.from(img);
+      const iconSprite = new Sprite(texture);
+      iconSprite.anchor.set(0.5);
+      iconSprite.x = slotSize / 2;
+      iconSprite.y = slotSize / 2;
+
+      const maxSize = slotSize - 6;
+      if (iconSprite.width > maxSize || iconSprite.height > maxSize) {
+        const scale = maxSize / Math.max(iconSprite.width, iconSprite.height);
+        iconSprite.scale.set(scale);
+      }
+
+      this.dragGhost.addChildAt(iconSprite, 1);
+    } else {
+      // Fallback: show item name
+      const nameText = new Text({
+        text: inventorySlot.item.name.substring(0, 4),
+        style: {
+          fontSize: 10,
+          fill: 0xFFFFFF,
+          fontFamily: 'Arial',
+          fontWeight: 'bold',
+        },
+      });
+      nameText.anchor.set(0.5);
+      nameText.x = slotSize / 2;
+      nameText.y = slotSize / 2;
+      this.dragGhost.addChild(nameText);
+    }
+  }
+
+  private updateDragGhost(globalX: number, globalY: number): void {
+    if (!this.dragGhost) return;
+
+    const localPos = this.toLocal({ x: globalX, y: globalY });
+    const slotSize = INVENTORY_CONFIG.SLOT_SIZE;
+
+    this.dragGhost.x = localPos.x - slotSize / 2;
+    this.dragGhost.y = localPos.y - slotSize / 2;
+  }
+
+  private updateDropTarget(globalX: number, globalY: number): void {
+    // Clear all highlights first
+    for (let i = 0; i < this.slotGraphics.length; i++) {
+      this.highlightSlot(i, false);
+    }
+
+    // Highlight the slot under cursor
+    const targetIndex = this.getSlotIndexAtPosition(globalX, globalY);
+    if (targetIndex !== -1 && targetIndex !== this.dragStartIndex) {
+      this.highlightSlot(targetIndex, true);
+    }
+  }
+
+  private getSlotIndexAtPosition(globalX: number, globalY: number): number {
+    const localPos = this.scrollContainer.toLocal({ x: globalX, y: globalY });
+    const slotSize = INVENTORY_CONFIG.SLOT_SIZE;
+
+    for (let i = 0; i < this.slotGraphics.length; i++) {
+      const slot = this.slotGraphics[i];
+      const slotX = slot.x;
+      const slotY = slot.y;
+
+      if (
+        localPos.x >= slotX &&
+        localPos.x <= slotX + slotSize &&
+        localPos.y >= slotY - this.scrollY &&
+        localPos.y <= slotY + slotSize - this.scrollY
+      ) {
+        return i;
+      }
+    }
+
+    return -1;
+  }
+
+  private onDragEnd(): void {
+    // Remove global event listeners
+    this.off('globalpointermove', this.onGlobalPointerMove, this);
+    this.off('pointerup', this.onGlobalPointerUp, this);
+    this.off('pointerupoutside', this.onGlobalPointerUp, this);
+
+    // Restore original slot opacity
+    if (this.dragStartIndex !== -1) {
+      const originalSlot = this.slotGraphics[this.dragStartIndex];
+      if (originalSlot) {
+        originalSlot.alpha = 1;
+      }
+    }
+
+    // Remove ghost
+    if (this.dragGhost) {
+      this.removeChild(this.dragGhost);
+      this.dragGhost.destroy({ children: true });
+      this.dragGhost = null;
+    }
+
+    // Remove all highlights
+    for (let i = 0; i < this.slotGraphics.length; i++) {
+      this.highlightSlot(i, false);
+    }
+
+    this.isDragging = false;
+    this.dragStartIndex = -1;
+  }
+
+  private highlightSlot(index: number, highlight: boolean): void {
+    const slot = this.slotGraphics[index];
+    if (!slot) return;
+
+    const slotSize = INVENTORY_CONFIG.SLOT_SIZE;
+    const item = this.items[index] ?? null;
+
+    slot.clear();
+    slot.roundRect(0, 0, slotSize, slotSize, 2);
+    slot.fill({ color: highlight ? 0x336699 : INVENTORY_CONFIG.SLOT_BACKGROUND_COLOR });
+    slot.stroke({
+      color: highlight ? 0x66CCFF : INVENTORY_CONFIG.SLOT_BORDER_COLOR,
+      width: highlight ? 2 : 1,
+    });
+  }
+
+  // ============================================================================
+  // Private Methods - Tooltip
+  // ============================================================================
+
+  private showTooltip(inventorySlot: InventorySlot, globalX: number, globalY: number): void {
+    this.hideTooltip();
+
+    const item = inventorySlot.item;
+    const tooltip = new Container();
+    tooltip.label = 'itemTooltip';
+
+    const padding = 8;
+    const lineHeight = 14;
+    const lines: Array<{ text: string; color: number; bold?: boolean }> = [];
+
+    // Item name (color by category)
+    const nameColor = item.category === 'equip' ? 0x66CCFF :
+      item.category === 'use' ? 0x99FF99 : 0xFFCC66;
+    lines.push({ text: item.name, color: nameColor, bold: true });
+
+    // Category
+    const categoryText = item.category === 'equip' ? '장비' :
+      item.category === 'use' ? '소비' : '기타';
+    lines.push({ text: `[${categoryText}]`, color: 0xAAAAAA });
+
+    // Description
+    if (item.description) {
+      lines.push({ text: '', color: 0xFFFFFF }); // spacer
+      const descLines = item.description.split('\\n');
+      for (const descLine of descLines) {
+        lines.push({ text: descLine, color: 0xCCCCCC });
+      }
+    }
+
+    // Equip stats
+    if (item.category === 'equip') {
+      lines.push({ text: '', color: 0xFFFFFF }); // spacer
+      if (item.attackPower > 0) lines.push({ text: `공격력: +${item.attackPower}`, color: 0xFF9999 });
+      if (item.magicPower > 0) lines.push({ text: `마력: +${item.magicPower}`, color: 0x9999FF });
+      if (item.defense > 0) lines.push({ text: `방어력: +${item.defense}`, color: 0x99FF99 });
+
+      // Stats
+      if (item.stats) {
+        if (item.stats.str) lines.push({ text: `STR: +${item.stats.str}`, color: 0xFFAAAA });
+        if (item.stats.dex) lines.push({ text: `DEX: +${item.stats.dex}`, color: 0xAAFFAA });
+        if (item.stats.int) lines.push({ text: `INT: +${item.stats.int}`, color: 0xAAAAFF });
+        if (item.stats.luk) lines.push({ text: `LUK: +${item.stats.luk}`, color: 0xFFFFAA });
+      }
+
+      // Upgrade slots
+      if (item.upgradeSlots > 0) {
+        lines.push({ text: `업그레이드 가능 횟수: ${item.upgradeSlots - item.usedSlots}`, color: 0xFFFF00 });
+      }
+
+      // Required level
+      if (item.requiredLevel > 0) {
+        lines.push({ text: `REQ LEV: ${item.requiredLevel}`, color: 0xFF6666 });
+      }
+    }
+
+    // Use item effects
+    if (item.category === 'use') {
+      lines.push({ text: '', color: 0xFFFFFF }); // spacer
+      const effect = item.effect;
+      if (effect.type === 'heal_hp') {
+        lines.push({ text: `HP +${effect.value} 회복`, color: 0xFF9999 });
+      } else if (effect.type === 'heal_mp') {
+        lines.push({ text: `MP +${effect.value} 회복`, color: 0x9999FF });
+      } else if (effect.type === 'heal_both') {
+        lines.push({ text: `HP/MP +${effect.value} 회복`, color: 0xFF99FF });
+      } else if (effect.type === 'buff') {
+        lines.push({ text: `버프 효과: +${effect.value}`, color: 0xFFFF99 });
+        if (effect.duration) {
+          lines.push({ text: `지속시간: ${effect.duration / 1000}초`, color: 0xAAAAAA });
+        }
+      }
+
+      // Stack info
+      lines.push({ text: `최대 중첩: ${item.maxStack}개`, color: 0xAAAAAA });
+    }
+
+    // Etc item stack info
+    if (item.category === 'etc') {
+      lines.push({ text: '', color: 0xFFFFFF }); // spacer
+      lines.push({ text: `최대 중첩: ${item.maxStack}개`, color: 0xAAAAAA });
+    }
+
+    // Quantity
+    if (inventorySlot.quantity > 1) {
+      lines.push({ text: `보유 수량: ${inventorySlot.quantity}개`, color: 0xFFFFFF });
+    }
+
+    // Sell price
+    if (item.sellPrice > 0) {
+      lines.push({ text: `판매가: ${item.sellPrice} 메소`, color: 0xFFD700 });
+    }
+
+    // Calculate tooltip size
+    let maxWidth = 0;
+    const textObjects: Text[] = [];
+
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i];
+      const textObj = new Text({
+        text: line.text,
+        style: {
+          fontSize: 11,
+          fill: line.color,
+          fontFamily: 'Arial',
+          fontWeight: line.bold ? 'bold' : 'normal',
+        },
+      });
+      textObj.x = padding;
+      textObj.y = padding + i * lineHeight;
+      textObjects.push(textObj);
+      maxWidth = Math.max(maxWidth, textObj.width);
+    }
+
+    const tooltipWidth = maxWidth + padding * 2;
+    const tooltipHeight = lines.length * lineHeight + padding * 2;
+
+    // Background
+    const bg = new Graphics();
+    bg.roundRect(0, 0, tooltipWidth, tooltipHeight, 4);
+    bg.fill({ color: 0x1a1a2e, alpha: 0.95 });
+    bg.stroke({ color: 0x4488ff, width: 1 });
+    tooltip.addChild(bg);
+
+    // Add text objects
+    for (const textObj of textObjects) {
+      tooltip.addChild(textObj);
+    }
+
+    // Position tooltip
+    this.tooltip = tooltip;
+    this.addChild(tooltip);
+    this.updateTooltipPosition(globalX, globalY);
+  }
+
+  private hideTooltip(): void {
+    if (this.tooltip) {
+      this.removeChild(this.tooltip);
+      this.tooltip.destroy({ children: true });
+      this.tooltip = null;
+    }
+  }
+
+  private updateTooltipPosition(globalX: number, globalY: number): void {
+    if (!this.tooltip) return;
+
+    // Convert global position to local
+    const localPos = this.toLocal({ x: globalX, y: globalY });
+
+    // Offset from cursor
+    const offsetX = 10;
+    const offsetY = 5;
+
+    const tooltipWidth = this.tooltip.width;
+    const tooltipHeight = this.tooltip.height;
+
+    // Default: show tooltip to the left of cursor (since inventory is on the right side)
+    let tooltipX = localPos.x - tooltipWidth - offsetX;
+    let tooltipY = localPos.y - offsetY;
+
+    // If tooltip would go too far left (beyond inventory left edge), show on right
+    if (tooltipX < -tooltipWidth) {
+      tooltipX = localPos.x + offsetX;
+    }
+
+    // Keep tooltip vertically within reasonable bounds
+    if (tooltipY + tooltipHeight > this.uiHeight) {
+      tooltipY = this.uiHeight - tooltipHeight;
+    }
+    if (tooltipY < 0) {
+      tooltipY = 0;
+    }
+
+    this.tooltip.x = tooltipX;
+    this.tooltip.y = tooltipY;
   }
 
   // ============================================================================

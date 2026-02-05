@@ -88,6 +88,10 @@ export class LogSystem {
     this.addLog(`${itemName} 획득!`, 0x87CEEB);
   }
 
+  logWarning(message: string): void {
+    this.addLog(message, 0xFF6666);
+  }
+
   updateLogEntries(): void {
     const now = Date.now();
     const fadeStart = LAYOUT_CONFIG.LOG_AREA.FADE_START_MS;

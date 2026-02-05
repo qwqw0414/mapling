@@ -1,5 +1,6 @@
 import { Container, Graphics, Sprite, Texture } from 'pixi.js';
 import { AssetManager } from './AssetManager';
+import { getItemById } from '@/data/items';
 
 // ============================================================================
 // Drop System
@@ -14,6 +15,7 @@ export class DropSystem {
 
   private onMesoGainCallback: ((amount: number) => void) | null = null;
   private onItemDropCallback: ((itemName: string) => void) | null = null;
+  private onItemPickupCallback: ((itemId: number, quantity: number) => void) | null = null;
   private onDividerEffectCallback: (() => void) | null = null;
 
   constructor(
@@ -39,10 +41,12 @@ export class DropSystem {
   setCallbacks(callbacks: {
     onMesoGain?: (amount: number) => void;
     onItemDrop?: (itemName: string) => void;
+    onItemPickup?: (itemId: number, quantity: number) => void;
     onDividerEffect?: () => void;
   }): void {
     this.onMesoGainCallback = callbacks.onMesoGain ?? null;
     this.onItemDropCallback = callbacks.onItemDrop ?? null;
+    this.onItemPickupCallback = callbacks.onItemPickup ?? null;
     this.onDividerEffectCallback = callbacks.onDividerEffect ?? null;
   }
 
@@ -65,16 +69,30 @@ export class DropSystem {
   // ============================================================================
 
   tryDropItems(
-    drops: Array<{ itemId: number; name?: string; chance: number }>,
+    drops: Array<{ itemId: number; name?: string; chance: number; minQuantity?: number; maxQuantity?: number }>,
     x: number,
     y: number
   ): void {
     for (const drop of drops) {
       if (Math.random() * 100 <= drop.chance) {
+        // Skip if item data doesn't exist
+        const itemData = getItemById(drop.itemId);
+        if (!itemData) {
+          continue;
+        }
+
+        const minQty = drop.minQuantity ?? 1;
+        const maxQty = drop.maxQuantity ?? 1;
+        const quantity = minQty + Math.floor(Math.random() * (maxQty - minQty + 1));
+
         this.createItemDrop(drop, x, y);
 
         if (this.onItemDropCallback) {
-          this.onItemDropCallback(drop.name || `아이템 ${drop.itemId}`);
+          this.onItemDropCallback(itemData.name);
+        }
+
+        if (this.onItemPickupCallback) {
+          this.onItemPickupCallback(drop.itemId, quantity);
         }
 
         this.playItemPickupSound();

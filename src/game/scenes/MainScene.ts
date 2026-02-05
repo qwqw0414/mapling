@@ -8,6 +8,7 @@ import {
 } from '@/constants/config';
 import { getMapById } from '@/data/maps';
 import { getMobById } from '@/data/mobs';
+import { getItemById, convertItemDataToItem } from '@/data/items';
 import { AudioManager } from '@/game/systems/AudioManager';
 import { AssetManager } from '@/game/systems/AssetManager';
 import { MonsterSystem, MOB_ANIMATIONS } from '@/game/systems/MonsterSystem';
@@ -239,6 +240,7 @@ export class MainScene extends BaseScene {
     this.dropSystem.setCallbacks({
       onMesoGain: (amount) => this.onMesoGain(amount),
       onItemDrop: (itemName) => this.logSystem.logItemDrop(itemName),
+      onItemPickup: (itemId, quantity) => this.onItemPickup(itemId, quantity),
       onDividerEffect: () => this.playDividerEffect(),
     });
 
@@ -558,6 +560,25 @@ export class MainScene extends BaseScene {
     this.logSystem.logMesoGain(amount);
   }
 
+  private onItemPickup(itemId: number, quantity: number): void {
+    const itemData = getItemById(itemId);
+    if (!itemData) {
+      console.warn(`[MainScene] Item not found: [itemId]=[${itemId}]`);
+      return;
+    }
+
+    const item = convertItemDataToItem(itemData);
+    const inventoryStore = useInventoryStore.getState();
+    const isAdded = inventoryStore.addItem(item, quantity);
+
+    if (isAdded) {
+      console.log(`[MainScene] Item added to inventory: [name]=[${item.name}] [quantity]=[${quantity}]`);
+      this.refreshInventory();
+    } else {
+      this.logSystem.logWarning('인벤토리가 가득 찼습니다!');
+    }
+  }
+
   // ============================================================================
   // Inventory UI
   // ============================================================================
@@ -570,6 +591,7 @@ export class MainScene extends BaseScene {
       height: this.layout.inventory.height - padding * 2,
       onTabChange: (tab) => this.onInventoryTabChange(tab),
       onSlotClick: (index, item) => this.onInventorySlotClick(index, item),
+      onItemSwap: (category, fromIndex, toIndex) => this.onInventoryItemSwap(category, fromIndex, toIndex),
     });
 
     this.inventoryUI.x = padding / 2;
@@ -610,6 +632,13 @@ export class MainScene extends BaseScene {
     } else {
       console.log(`[MainScene] Empty inventory slot ${index} clicked`);
     }
+  }
+
+  private onInventoryItemSwap(category: 'equip' | 'use' | 'etc', fromIndex: number, toIndex: number): void {
+    const inventoryStore = useInventoryStore.getState();
+    inventoryStore.swapItems(category, fromIndex, toIndex);
+    this.refreshInventory();
+    console.log(`[MainScene] Item swapped: [category]=[${category}] [from]=[${fromIndex}] [to]=[${toIndex}]`);
   }
 
   public updateInventoryMeso(amount: number): void {

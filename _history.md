@@ -1,5 +1,11 @@
 # Mapling - 개발 히스토리
 
+[2026-02-06] 캐릭터 스프라이트: maplestory.io Character API 연동, 32종 모션 GIF(stand/walk/attack/stab/shoot 등), L1/L2 캐싱, 외형(CharacterLook) 시스템
+[2026-02-06] 자동전투 시스템: AutoCombatSystem(캐릭터별 개별딜레이/타겟팅), Post-BB 데미지 공식, LevelSystem(EXP분배/레벨업/HP/MP성장), 전투/대기 토글 버튼
+[2026-02-06] 직업/EXP 데이터: jobs.ts(5대직업 4차전직 전체 30종), expTable.ts(Lv1-200 필요경험치)
+[2026-02-06] 타입 확장: CharacterState에 weaponAttack/magicAttack, PartyCharacter에 mode/targetMonsterId 추가
+[2026-02-06] 전체 메모리 누수/성능 최적화: blob URL 해제, rAF 추적/취소, 엔티티 destroy 추가, 이벤트 리스너 정리, 필드 경계 캐싱
+[2026-02-06] AssetManager 2단 캐시: L1(메모리)+L2(IndexedDB) 영속 캐시, LRU eviction, QuotaExceeded 폴백
 [2026-02-05] 인벤토리 드래그앤드롭: 아이템 슬롯 위치 이동/교환 기능, 드래그 고스트/하이라이트 UI
 [2026-02-05] 인벤토리 아이템 툴팁: 호버 시 이름/설명/효과/스탯 표시, 카테고리별 색상 구분
 [2026-02-05] 몬스터 처치 시 드랍 아이템 인벤토리 자동 추가: DropSystem에 onItemPickup 콜백, ItemData->Item 변환 함수, 인벤토리 아이콘 표시

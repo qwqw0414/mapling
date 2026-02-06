@@ -3,7 +3,9 @@ import { GifSprite, GifSource } from 'pixi.js/gif';
 import { SLOT_CONFIG } from '@/constants/config';
 import { StatusBar } from './StatusBar';
 import { SkillBar } from './SkillBar';
+import { getRequiredExp } from '@/data/expTable';
 import type { PartyCharacter } from '@/types/party';
+import type { CharacterMode } from '@/types/character';
 
 // ============================================================================
 // Types
@@ -15,6 +17,7 @@ interface PartySlotOptions {
   slotIndex: number;
   character?: PartyCharacter | null;
   onClick?: (slotIndex: number) => void;
+  onToggleMode?: (slotIndex: number) => void;
 }
 
 // ============================================================================
@@ -27,10 +30,13 @@ interface PartySlotOptions {
  * Shows empty slot indicator if no character assigned
  */
 export class PartySlot extends Container {
-  private readonly slotWidth: number;
-  private readonly slotHeight: number;
+  private slotWidth: number;
+  private slotHeight: number;
   private readonly slotIndex: number;
   private readonly padding: number;
+
+  // Animation tracking
+  private isAttackAnimating = false;
   
   private character: PartyCharacter | null = null;
   
@@ -46,9 +52,13 @@ export class PartySlot extends Container {
   private skillBar: SkillBar | null = null;
   private nameText: Text | null = null;
   private levelText: Text | null = null;
+  private modeToggleButton: Container | null = null;
+  private modeToggleBg: Graphics | null = null;
+  private modeToggleText: Text | null = null;
 
-  // Callback
+  // Callbacks
   private readonly onClickCallback?: (slotIndex: number) => void;
+  private readonly onToggleModeCallback?: (slotIndex: number) => void;
 
   /**
    * Create party slot
@@ -61,6 +71,7 @@ export class PartySlot extends Container {
     this.slotIndex = options.slotIndex;
     this.padding = SLOT_CONFIG.PADDING;
     this.onClickCallback = options.onClick;
+    this.onToggleModeCallback = options.onToggleMode;
 
     // Background
     this.background = new Graphics();
@@ -104,6 +115,24 @@ export class PartySlot extends Container {
   }
 
   /**
+   * Update the entire character data and refresh UI
+   */
+  public updateCharacter(character: PartyCharacter): void {
+    this.character = character;
+    const requiredExp = this.calculateRequiredExp(character.level);
+
+    this.hpBar?.updateValues(character.hp, character.maxHp);
+    this.mpBar?.updateValues(character.mp, character.maxMp);
+    this.expBar?.updateValues(character.exp, requiredExp);
+
+    if (this.levelText) {
+      this.levelText.text = `Lv.${character.level}`;
+    }
+
+    this.updateMode(character.mode);
+  }
+
+  /**
    * Update character status (HP/MP/EXP)
    */
   public updateStatus(hp: number, maxHp: number, mp: number, maxMp: number, exp: number, requiredExp: number): void {
@@ -134,27 +163,19 @@ export class PartySlot extends Container {
     if (!gifSource) return;
 
     const spriteHeight = this.slotHeight * SLOT_CONFIG.SPRITE_HEIGHT_RATIO;
-    const spriteY = this.padding + spriteHeight / 2;
+    const spriteBottomY = this.padding + spriteHeight;
 
-    // Create GIF sprite
+    // Create GIF sprite - use original size without scaling
     const gifSprite = new GifSprite({
       source: gifSource,
       autoPlay: true,
       loop: true,
     });
+    // FeetCenter: anchor (0.5, 0.5) = feet position (canvas center).
+    // Place feet at sprite area bottom so character body extends upward.
     gifSprite.anchor.set(0.5, 0.5);
     gifSprite.x = this.slotWidth / 2;
-    gifSprite.y = spriteY;
-
-    // Scale to fit sprite area
-    const maxSpriteWidth = this.slotWidth - this.padding * 2;
-    const maxSpriteHeight = spriteHeight - this.padding;
-    const scale = Math.min(
-      maxSpriteWidth / gifSprite.width,
-      maxSpriteHeight / gifSprite.height,
-      1.5 // Max scale
-    );
-    gifSprite.scale.set(scale);
+    gifSprite.y = spriteBottomY;
 
     this.characterSprite = gifSprite;
     this.characterContainer.addChildAt(gifSprite, 0);
@@ -164,24 +185,27 @@ export class PartySlot extends Container {
    * Play attack animation (for testing/demo)
    */
   public playAttackAnimation(): void {
-    if (!this.characterSprite) return;
+    if (!this.characterSprite || this.isAttackAnimating) return;
 
-    // Simple scale pulse animation
+    this.isAttackAnimating = true;
     const originalScale = this.characterSprite.scale.x;
     const duration = 300;
     const startTime = Date.now();
 
     const animate = (): void => {
+      if (!this.isAttackAnimating || !this.characterSprite) return;
+
       const elapsed = Date.now() - startTime;
       const progress = Math.min(elapsed / duration, 1);
       
       const scale = originalScale + Math.sin(progress * Math.PI) * 0.1;
-      this.characterSprite!.scale.set(scale);
+      this.characterSprite.scale.set(scale);
 
       if (progress < 1) {
         requestAnimationFrame(animate);
       } else {
-        this.characterSprite!.scale.set(originalScale);
+        this.characterSprite.scale.set(originalScale);
+        this.isAttackAnimating = false;
       }
     };
 
@@ -275,6 +299,9 @@ export class PartySlot extends Container {
 
     // Skill bar
     this.createSkillBar(character, statsStartY + 20 + 3 * (SLOT_CONFIG.STAT_BAR.HEIGHT + SLOT_CONFIG.STAT_BAR.GAP) + 5);
+
+    // Combat/Idle toggle button
+    this.createModeToggleButton(character);
   }
 
   private createCharacterInfo(character: PartyCharacter, y: number): void {
@@ -370,8 +397,77 @@ export class PartySlot extends Container {
   }
 
   private calculateRequiredExp(level: number): number {
-    // Simplified EXP formula (can be replaced with actual game formula)
-    return Math.floor(100 + level * 50 + Math.pow(level, 2) * 10);
+    return getRequiredExp(level);
+  }
+
+  // ============================================================================
+  // Private Methods - Mode Toggle Button
+  // ============================================================================
+
+  private createModeToggleButton(character: PartyCharacter): void {
+    const buttonWidth = 50;
+    const buttonHeight = 18;
+
+    this.modeToggleButton = new Container();
+    this.modeToggleButton.x = (this.slotWidth - buttonWidth) / 2;
+    this.modeToggleButton.y = this.padding + 2;
+
+    // Background
+    this.modeToggleBg = new Graphics();
+    this.modeToggleButton.addChild(this.modeToggleBg);
+
+    // Label
+    this.modeToggleText = new Text({
+      text: '',
+      style: {
+        fontSize: 10,
+        fill: 0xFFFFFF,
+        fontFamily: 'Arial',
+        fontWeight: 'bold',
+      },
+    });
+    this.modeToggleText.anchor.set(0.5);
+    this.modeToggleText.x = buttonWidth / 2;
+    this.modeToggleText.y = buttonHeight / 2;
+    this.modeToggleButton.addChild(this.modeToggleText);
+
+    // Interactivity
+    this.modeToggleButton.eventMode = 'static';
+    this.modeToggleButton.cursor = 'pointer';
+    this.modeToggleButton.on('pointerdown', (e) => {
+      e.stopPropagation();
+      if (this.onToggleModeCallback) {
+        this.onToggleModeCallback(this.slotIndex);
+      }
+    });
+
+    this.renderModeButton(character.mode, buttonWidth, buttonHeight);
+    this.characterContainer.addChild(this.modeToggleButton);
+  }
+
+  /**
+   * Update the mode toggle button appearance
+   */
+  public updateMode(mode: CharacterMode): void {
+    if (!this.modeToggleBg || !this.modeToggleText) return;
+
+    const buttonWidth = 50;
+    const buttonHeight = 18;
+    this.renderModeButton(mode, buttonWidth, buttonHeight);
+  }
+
+  private renderModeButton(mode: CharacterMode, width: number, height: number): void {
+    if (!this.modeToggleBg || !this.modeToggleText) return;
+
+    const isCombat = mode === 'combat';
+    const bgColor = isCombat ? 0xCC3333 : 0x336699;
+    const label = isCombat ? 'COMBAT' : 'IDLE';
+
+    this.modeToggleBg.clear();
+    this.modeToggleBg.roundRect(0, 0, width, height, 4);
+    this.modeToggleBg.fill({ color: bgColor });
+
+    this.modeToggleText.text = label;
   }
 
   // ============================================================================
@@ -409,5 +505,25 @@ export class PartySlot extends Container {
     this.on('pointerout', () => {
       this.drawBackground();
     });
+  }
+
+  // ============================================================================
+  // Cleanup
+  // ============================================================================
+
+  public override destroy(): void {
+    // Stop pending animations
+    this.isAttackAnimating = false;
+
+    // Remove all event listeners
+    this.removeAllListeners();
+
+    // Cleanup UI elements
+    if (this.characterSprite) {
+      this.characterSprite.destroy();
+      this.characterSprite = null;
+    }
+
+    super.destroy({ children: true });
   }
 }

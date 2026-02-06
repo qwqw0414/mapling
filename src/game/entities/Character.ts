@@ -62,4 +62,16 @@ export class Character {
   playDeath(): void {
     // TODO: Play death animation
   }
+
+  // ============================================================================
+  // Cleanup
+  // ============================================================================
+
+  destroy(): void {
+    if (this.sprite) {
+      this.sprite.destroy();
+      this.sprite = null;
+    }
+    this.container.destroy({ children: true });
+  }
 }

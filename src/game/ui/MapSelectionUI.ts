@@ -442,8 +442,9 @@ export class MapSelectionUI extends Container {
     this.visible = false;
   }
 
-  public destroy(): void {
+  public override destroy(): void {
     this.background.removeAllListeners();
+    this.contentContainer.removeAllListeners();
     super.destroy({ children: true });
   }
 }

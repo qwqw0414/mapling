@@ -942,4 +942,21 @@ export class InventoryUI extends Container {
 
     this.maxScrollY = Math.max(0, contentHeight - gridHeight);
   }
+
+  // ============================================================================
+  // Cleanup
+  // ============================================================================
+
+  public override destroy(): void {
+    this.removeAllListeners();
+    this.hideTooltip();
+
+    if (this.dragGhost) {
+      this.removeChild(this.dragGhost);
+      this.dragGhost.destroy({ children: true });
+      this.dragGhost = null;
+    }
+
+    super.destroy({ children: true });
+  }
 }

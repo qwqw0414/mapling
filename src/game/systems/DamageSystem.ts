@@ -18,6 +18,10 @@ export class DamageSystem {
 
   private onMonsterDeathCallback: ((instanceId: string) => void) | null = null;
 
+  // Animation tracking for cleanup
+  private isDestroyed = false;
+  private activeAnimations: Set<Container> = new Set();
+
   constructor(fieldLayer: Container) {
     this.fieldLayer = fieldLayer;
   }
@@ -179,11 +183,15 @@ export class DamageSystem {
     }
 
     this.fieldLayer.addChild(damageContainer);
+    this.activeAnimations.add(damageContainer);
 
     const duration = 1000;
     const startTime = Date.now();
 
     const animate = () => {
+      // Stop if system is destroyed
+      if (this.isDestroyed) return;
+
       const elapsed = Date.now() - startTime;
       const progress = Math.min(elapsed / duration, 1);
 
@@ -222,6 +230,7 @@ export class DamageSystem {
         requestAnimationFrame(animate);
       } else {
         this.fieldLayer.removeChild(damageContainer);
+        this.activeAnimations.delete(damageContainer);
         damageContainer.destroy();
       }
     };
@@ -244,6 +253,59 @@ export class DamageSystem {
   }
 
   // ============================================================================
+  // Miss Text
+  // ============================================================================
+
+  /**
+   * Show a "MISS" text above a monster sprite
+   */
+  showMissText(sprite: Container): void {
+    if (this.isDestroyed) return;
+
+    const missText = new Text({
+      text: 'MISS',
+      style: {
+        fontSize: 16,
+        fill: 0xAAAAAA,
+        fontFamily: 'Arial',
+        fontWeight: 'bold',
+        stroke: { color: 0x000000, width: 2 },
+      },
+    });
+    missText.anchor.set(0.5);
+    missText.x = sprite.x;
+    missText.y = sprite.y - 40;
+    this.fieldLayer.addChild(missText);
+
+    const startY = missText.y;
+    const startTime = Date.now();
+    const duration = 600;
+
+    const animate = (): void => {
+      if (this.isDestroyed) {
+        if (missText.parent) missText.parent.removeChild(missText);
+        missText.destroy();
+        return;
+      }
+
+      const elapsed = Date.now() - startTime;
+      const progress = Math.min(elapsed / duration, 1);
+
+      missText.y = startY - progress * 30;
+      missText.alpha = 1 - progress;
+
+      if (progress < 1) {
+        requestAnimationFrame(animate);
+      } else {
+        if (missText.parent) missText.parent.removeChild(missText);
+        missText.destroy();
+      }
+    };
+
+    requestAnimationFrame(animate);
+  }
+
+  // ============================================================================
   // Cleanup
   // ============================================================================
 
@@ -252,6 +314,16 @@ export class DamageSystem {
   }
 
   clearAll(): void {
+    this.isDestroyed = true;
     this.damageOffsets.clear();
+
+    // Cleanup active damage number animations
+    for (const container of this.activeAnimations) {
+      if (container.parent) {
+        container.parent.removeChild(container);
+      }
+      container.destroy();
+    }
+    this.activeAnimations.clear();
   }
 }

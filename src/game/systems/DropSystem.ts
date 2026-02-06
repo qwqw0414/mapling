@@ -18,6 +18,10 @@ export class DropSystem {
   private onItemPickupCallback: ((itemId: number, quantity: number) => void) | null = null;
   private onDividerEffectCallback: (() => void) | null = null;
 
+  // Animation tracking for cleanup
+  private isDestroyed = false;
+  private activeAnimations: Set<Container> = new Set();
+
   constructor(
     fieldLayer: Container,
     partyLayer: Container,
@@ -114,8 +118,12 @@ export class DropSystem {
 
     if (iconBlob) {
       const img = new Image();
-      img.src = URL.createObjectURL(iconBlob);
+      const blobUrl = URL.createObjectURL(iconBlob);
+      img.src = blobUrl;
       await new Promise(resolve => { img.onload = resolve; });
+
+      // Revoke blob URL after image is loaded into GPU texture
+      URL.revokeObjectURL(blobUrl);
 
       const texture = Texture.from(img);
       const itemSprite = new Sprite(texture);
@@ -138,6 +146,7 @@ export class DropSystem {
     }
 
     this.fieldLayer.addChild(itemContainer);
+    this.activeAnimations.add(itemContainer);
     this.flyToPartyArea(itemContainer, x, y);
   }
 
@@ -151,7 +160,12 @@ export class DropSystem {
     const bounceHeight = 40;
     const bounceTime = 150;
 
+    let hasFiredDividerEffect = false;
+
     const animate = (): void => {
+      // Stop if system is destroyed
+      if (this.isDestroyed) return;
+
       const elapsed = Date.now() - startTime;
 
       if (elapsed < bounceTime) {
@@ -171,7 +185,8 @@ export class DropSystem {
         container.scale.set(scale);
         container.alpha = 1 - flyProgress * 0.3;
 
-        if (flyProgress > 0.6 && flyProgress < 0.65) {
+        if (flyProgress > 0.6 && !hasFiredDividerEffect) {
+          hasFiredDividerEffect = true;
           if (this.onDividerEffectCallback) {
             this.onDividerEffectCallback();
           }
@@ -179,6 +194,7 @@ export class DropSystem {
 
         if (flyProgress >= 1) {
           this.fieldLayer.removeChild(container);
+          this.activeAnimations.delete(container);
           container.destroy();
           return;
         }
@@ -203,6 +219,18 @@ export class DropSystem {
   // ============================================================================
 
   clearAll(): void {
+    this.isDestroyed = true;
+
+    // Cleanup active fly animations
+    for (const container of this.activeAnimations) {
+      if (container.parent) {
+        container.parent.removeChild(container);
+      }
+      container.destroy();
+    }
+    this.activeAnimations.clear();
+
+    // Cleanup labeled drop items
     const children = this.fieldLayer.children.slice();
     for (const child of children) {
       if (child.label && child.label.startsWith('dropItem_')) {

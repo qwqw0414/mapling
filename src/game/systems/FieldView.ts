@@ -75,4 +75,24 @@ export class FieldView {
     this.fieldLayer.cursor = 'auto';
     this.fieldLayer.removeAllListeners('pointerdown');
   }
+
+  // ============================================================================
+  // Cleanup
+  // ============================================================================
+
+  destroy(): void {
+    this.removeClickHandler();
+
+    const fieldBg = this.fieldLayer.getChildByName('fieldBg');
+    if (fieldBg) {
+      this.fieldLayer.removeChild(fieldBg);
+      fieldBg.destroy();
+    }
+
+    const groundLine = this.fieldLayer.getChildByName('groundLine');
+    if (groundLine) {
+      this.fieldLayer.removeChild(groundLine);
+      groundLine.destroy();
+    }
+  }
 }

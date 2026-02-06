@@ -11,6 +11,7 @@ import { AssetManager } from './AssetManager';
 
 interface AudioState {
   bgm: HTMLAudioElement | null;
+  bgmBlobUrl: string | null;
   currentBgmPath: string | null;
   isMuted: boolean;
   bgmVolume: number;
@@ -26,6 +27,7 @@ export class AudioManager {
   private static instance: AudioManager | null = null;
   private state: AudioState = {
     bgm: null,
+    bgmBlobUrl: null,
     currentBgmPath: null,
     isMuted: false,
     bgmVolume: AUDIO_CONFIG.DEFAULT_BGM_VOLUME,
@@ -90,9 +92,10 @@ export class AudioManager {
       audio.loop = true;
       audio.volume = this.state.isMuted ? 0 : this.state.bgmVolume;
 
-      // Store state
+      // Store state (blobUrl is tracked inside createAudioFromBase64)
       this.state.bgm = audio;
       this.state.currentBgmPath = bgmPath;
+      this.state.bgmBlobUrl = audio.src;
 
       // Play with fade-in
       await this.fadeIn(audio, AUDIO_CONFIG.FADE_DURATION);
@@ -110,13 +113,20 @@ export class AudioManager {
       const audioToStop = this.state.bgm;
       
       // Clear state immediately to prevent race conditions
+      const blobUrlToRevoke = this.state.bgmBlobUrl;
       this.state.bgm = null;
+      this.state.bgmBlobUrl = null;
       this.state.currentBgmPath = null;
       
       // Fade out and cleanup
       await this.fadeOut(audioToStop, AUDIO_CONFIG.FADE_DURATION);
       audioToStop.pause();
       audioToStop.src = '';
+
+      // Revoke blob URL to free memory
+      if (blobUrlToRevoke) {
+        URL.revokeObjectURL(blobUrlToRevoke);
+      }
     }
   }
 

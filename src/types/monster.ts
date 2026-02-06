@@ -60,3 +60,28 @@ export interface MobDrop {
 // ============================================================================
 
 export type MonsterGrade = 'normal' | 'elite' | 'boss';
+
+// ============================================================================
+// Monster Entity Types (Runtime Instance)
+// ============================================================================
+
+/**
+ * 몬스터 스폰 정보 (런타임 인스턴스)
+ */
+export interface MonsterInfo {
+  id: number;
+  name: string;
+  level: number;
+  maxHp: number;
+  grade: MonsterGrade;
+}
+
+/**
+ * 필드 위 몬스터 인스턴스 상태
+ */
+export interface MonsterInstance {
+  info: MonsterInfo;
+  x: number;
+  y: number;
+  currentHp: number;
+}

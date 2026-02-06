@@ -54,6 +54,8 @@ const createInitialCharacter = (name: string): CharacterState => ({
   maxHp: 50,
   mp: 5,
   maxMp: 5,
+  weaponAttack: 15,
+  magicAttack: 15,
 });
 
 // ============================================================================

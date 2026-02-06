@@ -1,5 +1,6 @@
-import type { CharacterState } from './character';
+import type { CharacterState, CharacterMode } from './character';
 import type { LearnedSkill } from './skill';
+import type { CharacterLook } from '@/data/characterLook';
 
 // ============================================================================
 // Party Types
@@ -16,6 +17,13 @@ export interface PartyCharacter extends CharacterState {
   equippedSkillSlots: Array<number | null>;
   lastAttackTime: number;
   currentAnimation: 'stand' | 'attack' | 'hit' | 'die';
+
+  /** Current character mode - idle allows management, combat enables auto-attack */
+  mode: CharacterMode;
+  /** Monster instance ID this character is currently targeting (null = no target) */
+  targetMonsterId: string | null;
+  /** Visual appearance data (skin, hair, face, equipment) */
+  look: CharacterLook;
 }
 
 /**

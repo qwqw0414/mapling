@@ -17,6 +17,9 @@ export interface CombatStats {
   dropRate: number;
 }
 
+/** Character interaction mode */
+export type CharacterMode = 'idle' | 'combat';
+
 export interface CharacterState {
   name: string;
   level: number;
@@ -30,6 +33,10 @@ export interface CharacterState {
   maxHp: number;
   mp: number;
   maxMp: number;
+  /** Base weapon attack power (from equipment, or default if none) */
+  weaponAttack: number;
+  /** Base magic attack power (from equipment, or default if none) */
+  magicAttack: number;
 }
 
 // ============================================================================

@@ -16,12 +16,20 @@ import { DamageSystem } from '@/game/systems/DamageSystem';
 import { DropSystem } from '@/game/systems/DropSystem';
 import { LogSystem } from '@/game/systems/LogSystem';
 import { FieldView } from '@/game/systems/FieldView';
+import { AutoCombatSystem } from '@/game/systems/AutoCombatSystem';
 import { PartySlot } from '@/game/ui/PartySlot';
 import { CharacterCreationUI } from '@/game/ui/CharacterCreationUI';
 import { MapSelectionUI } from '@/game/ui/MapSelectionUI';
 import { InventoryUI } from '@/game/ui/InventoryUI';
 import { useCharacterStore } from '@/stores/characterStore';
 import { useInventoryStore } from '@/stores/inventoryStore';
+import {
+  createDefaultLook,
+  PRIORITY_ANIMATIONS,
+  SECONDARY_ANIMATIONS,
+  getIdleAnimation,
+  getAttackAnimation,
+} from '@/data/characterLook';
 import type { MapInfo } from '@/types/map';
 import type { PartyCharacter } from '@/types/party';
 import type { Stats } from '@/types/character';
@@ -50,6 +58,9 @@ export class MainScene extends BaseScene {
   private mobSounds: Map<string, HTMLAudioElement> = new Map();
   private itemPickupSound: HTMLAudioElement | null = null;
 
+  // Blob URL tracking for cleanup
+  private blobUrls: string[] = [];
+
   // Layout containers
   private headerLayer!: Container;
   private partyLayer!: Container;
@@ -65,9 +76,13 @@ export class MainScene extends BaseScene {
   private dropSystem!: DropSystem;
   private logSystem!: LogSystem;
   private fieldView!: FieldView;
+  private autoCombatSystem!: AutoCombatSystem;
 
   // Map transition state
   private isChangingMap = false;
+
+  // Animation tracking
+  private isDividerAnimating = false;
 
   // UI elements
   private mapTitleText: Text | null = null;
@@ -127,6 +142,10 @@ export class MainScene extends BaseScene {
     this.monsterSystem.updateSpawnTimer(deltaTime);
     this.monsterSystem.updateMonsters(deltaTime);
     this.logSystem.updateLogEntries();
+
+    // Auto-combat: each character attacks on their own timer
+    const activeParty = this.getActivePartyMembers();
+    this.autoCombatSystem.update(activeParty, Date.now());
   }
 
   // ============================================================================
@@ -251,7 +270,15 @@ export class MainScene extends BaseScene {
       this.layout.field.width,
       this.layout.field.height
     );
-    this.fieldView.setupClickHandler(() => this.attackRandomMonster());
+
+    // Auto-combat system (replaces click-based attack)
+    this.autoCombatSystem = new AutoCombatSystem({
+      getAliveMonsters: () => this.monsterSystem.getAllMonsters(),
+      getMobData: (mobId) => getMobById(mobId) ?? null,
+      onAttack: (event) => this.handleAutoAttack(event),
+      onMonsterDeath: (event) => this.handleMonsterDeath(event),
+      onLevelUp: (result) => this.handleLevelUp(result),
+    });
   }
 
   // ============================================================================
@@ -532,6 +559,7 @@ export class MainScene extends BaseScene {
       slotIndex: index,
       character: null,
       onClick: (slotIndex: number) => this.onSlotClick(slotIndex),
+      onToggleMode: (slotIndex: number) => this.handleToggleMode(slotIndex),
     });
   }
 
@@ -549,14 +577,11 @@ export class MainScene extends BaseScene {
   // ============================================================================
 
   private onMesoGain(amount: number): void {
-    // Add to store
-    useCharacterStore.getState().addMeso(amount);
+    const store = useCharacterStore.getState();
+    store.addMeso(amount);
 
-    // Update inventory UI
-    const currentMeso = useCharacterStore.getState().meso;
-    this.updateInventoryMeso(currentMeso);
-
-    // Log the gain
+    // Update inventory UI with current total
+    this.updateInventoryMeso(store.meso);
     this.logSystem.logMesoGain(amount);
   }
 
@@ -697,6 +722,10 @@ export class MainScene extends BaseScene {
   }
 
   private createCharacter(name: string, stats: Stats): void {
+    const baseHp = 50 + stats.str * 2;
+    const baseMp = 10 + stats.int * 2;
+    const look = createDefaultLook();
+
     const newCharacter: PartyCharacter = {
       id: `char_${Date.now()}`,
       name: name,
@@ -708,75 +737,232 @@ export class MainScene extends BaseScene {
         accuracy: 10,
         evasion: 5,
         criticalChance: 0.05,
-        criticalDamage: 1.5,
+        criticalDamage: 150,
         dropRate: 1.0,
       },
       statPoints: 0,
       skillPoints: 0,
-      hp: 50 + stats.str * 2,
-      maxHp: 50 + stats.str * 2,
-      mp: 10 + stats.int * 2,
-      maxMp: 10 + stats.int * 2,
+      hp: baseHp,
+      maxHp: baseHp,
+      mp: baseMp,
+      maxMp: baseMp,
+      weaponAttack: 15,
+      magicAttack: 15,
       isActive: true,
       learnedSkills: [],
       equippedSkillSlots: [null, null, null, null, null, null],
       lastAttackTime: 0,
       currentAnimation: 'stand',
+      mode: 'idle',
+      targetMonsterId: null,
+      look,
     };
 
     this.partyCharacters.push(newCharacter);
     this.renderPartySlots();
 
+    // Load character sprite (priority animations first, then background load the rest)
+    this.loadCharacterSprite(newCharacter);
+
     console.log(`[MainScene] Character created: [name]=[${newCharacter.name}] [stats]=[STR:${stats.str},DEX:${stats.dex},INT:${stats.int},LUK:${stats.luk}] [partySize]=[${this.partyCharacters.length}]`);
   }
 
+  /**
+   * Load character sprite GIFs and apply to the corresponding party slot
+   */
+  private async loadCharacterSprite(character: PartyCharacter): Promise<void> {
+    const assetManager = AssetManager.getInstance();
+    const slotIndex = this.partyCharacters.indexOf(character);
+    if (slotIndex === -1) return;
+
+    // 1) Load priority animations (stand, walk, attack, alert)
+    await assetManager.preloadCharacterAnimations(character.look, PRIORITY_ANIMATIONS);
+
+    // Set initial idle sprite
+    const idleGif = await assetManager.getCharacterGif(character.look, getIdleAnimation());
+    const slot = this.partySlots[slotIndex];
+    if (slot && idleGif) {
+      slot.setCharacterSprite(idleGif);
+    }
+
+    // 2) Load remaining animations in background (non-blocking)
+    assetManager.preloadCharacterAnimations(character.look, SECONDARY_ANIMATIONS).catch(() => {});
+  }
+
+  /**
+   * Switch a party slot's displayed animation
+   */
+  private async updateSlotAnimation(
+    slotIndex: number,
+    animation: import('@/data/characterLook').CharacterAnimation,
+  ): Promise<void> {
+    const character = this.partyCharacters[slotIndex];
+    if (!character) return;
+
+    const assetManager = AssetManager.getInstance();
+    const gifSource = await assetManager.getCharacterGif(character.look, animation);
+
+    const slot = this.partySlots[slotIndex];
+    if (slot && gifSource) {
+      slot.setCharacterSprite(gifSource);
+    }
+  }
+
   // ============================================================================
-  // Combat (Test)
+  // Auto-Combat Handlers
   // ============================================================================
 
-  private attackRandomMonster(): void {
-    const monsters = this.monsterSystem.getAllMonsters();
-    const aliveMonsters = Array.from(monsters.entries())
-      .filter(([, state]) => !state.isDying);
+  /**
+   * Handle attack event from AutoCombatSystem
+   */
+  /** Delay before damage is applied (near end of attack animation) */
+  private static readonly ATTACK_DAMAGE_DELAY = 450;
 
-    if (aliveMonsters.length === 0) return;
+  private handleAutoAttack(event: import('@/game/systems/AutoCombatSystem').AttackEvent): void {
+    // Start attack animation immediately
+    this.playCharacterAttackMotion(event.characterId);
 
-    const randomIndex = Math.floor(Math.random() * aliveMonsters.length);
-    const [targetId, monster] = aliveMonsters[randomIndex];
+    // Delay damage to near end of attack animation
+    setTimeout(() => {
+      this.applyAttackDamage(event);
+    }, MainScene.ATTACK_DAMAGE_DELAY);
+  }
 
-    const isCritical = Math.random() < 0.3;
-    const damage = isCritical
-      ? Math.floor(Math.random() * 26) + 25
-      : Math.floor(Math.random() * 21) + 10;
+  /**
+   * Apply damage to the target monster (called after attack animation delay)
+   */
+  private applyAttackDamage(event: import('@/game/systems/AutoCombatSystem').AttackEvent): void {
+    const monster = this.monsterSystem.getMonster(event.targetInstanceId);
+    if (!monster) return;
 
-    const sprite = this.monsterSystem.getMonsterSprite(targetId);
+    const sprite = this.monsterSystem.getMonsterSprite(event.targetInstanceId);
     if (!sprite) return;
+
+    if (event.isMiss) {
+      this.damageSystem.showMissText(sprite);
+      return;
+    }
 
     const isDead = this.damageSystem.hitMonster(
       monster,
       sprite,
-      damage,
-      isCritical,
+      event.damage,
+      event.isCritical,
       (s, anim) => this.monsterSystem.setMonsterAnimation(s, anim)
     );
 
     if (isDead) {
-      const mob = getMobById(monster.mobId);
-      if (mob) {
-        this.logSystem.logExpGain(mob.name, mob.meta.exp);
-        this.dropSystem.tryDropMeso(mob.meso);
-        this.dropSystem.tryDropItems(mob.drops, monster.x, monster.y);
-      }
+      this.damageSystem.clearDamageOffsets(event.targetInstanceId);
+      const activeParty = this.getActivePartyMembers();
+      this.autoCombatSystem.notifyMonsterDeath(event.targetInstanceId, activeParty);
+    }
+  }
 
-      this.damageSystem.clearDamageOffsets(targetId);
+  /**
+   * Briefly switch character slot to attack animation, then back to idle
+   */
+  private async playCharacterAttackMotion(characterId: string): Promise<void> {
+    const slotIndex = this.partyCharacters.findIndex((c) => c?.id === characterId);
+    if (slotIndex === -1) return;
+
+    // Switch to attack animation
+    await this.updateSlotAnimation(slotIndex, getAttackAnimation());
+
+    // After a short delay, switch back to stand
+    setTimeout(() => {
+      const character = this.partyCharacters[slotIndex];
+      if (character && character.mode === 'combat') {
+        this.updateSlotAnimation(slotIndex, getIdleAnimation());
+      }
+    }, 600);
+  }
+
+  /**
+   * Handle monster death event from AutoCombatSystem
+   */
+  private handleMonsterDeath(event: import('@/game/systems/AutoCombatSystem').MonsterDeathEvent): void {
+    const { mobData } = event;
+
+    // Distribute EXP to combat-mode party members
+    const activeParty = this.getActivePartyMembers();
+    this.autoCombatSystem.processMonsterRewards(activeParty, mobData);
+
+    // Log and drops
+    this.logSystem.logExpGain(mobData.name, mobData.meta.exp);
+    if (mobData.meso) {
+      this.dropSystem.tryDropMeso(mobData.meso);
     }
 
-    const mob = getMobById(monster.mobId);
-    if (mob) {
-      const critText = isCritical ? ' [CRITICAL]' : '';
-      console.log(
-        `[Combat] Hit ${mob.name}: [damage]=[${damage}]${critText} [hp]=[${monster.currentHp}/${monster.maxHp}] [dead]=[${isDead}]`
-      );
+    const monster = this.monsterSystem.getMonster(event.instanceId);
+    if (monster) {
+      this.dropSystem.tryDropItems(mobData.drops, monster.x, monster.y);
+    }
+
+    // Update party slot UI to reflect EXP changes
+    this.updatePartySlotStats();
+  }
+
+  /**
+   * Handle level up event from AutoCombatSystem
+   */
+  private handleLevelUp(result: import('@/game/systems/LevelSystem').LevelUpResult): void {
+    const character = this.getActivePartyMembers().find(
+      (c) => c.id === result.characterId
+    );
+    const charName = character?.name ?? 'Unknown';
+
+    this.logSystem.addLog(
+      `${charName} Level UP! Lv.${result.oldLevel} -> Lv.${result.newLevel}`,
+      0xFFFF00
+    );
+
+    console.log(
+      `[LevelUp] [name]=[${charName}] [level]=[${result.oldLevel}->${result.newLevel}] [hp]=[+${result.hpGained}] [mp]=[+${result.mpGained}] [ap]=[+${result.statPointsGained}] [sp]=[+${result.skillPointsGained}]`
+    );
+
+    // Refresh UI
+    this.updatePartySlotStats();
+  }
+
+  /**
+   * Toggle a character's combat/idle mode
+   */
+  private handleToggleMode(slotIndex: number): void {
+    const character = this.partyCharacters[slotIndex];
+    if (!character) return;
+
+    const newMode = this.autoCombatSystem.toggleMode(character);
+    console.log(`[MainScene] Mode toggled: [name]=[${character.name}] [mode]=[${newMode}]`);
+
+    // Update the specific party slot's toggle button
+    const partySlot = this.partySlots[slotIndex];
+    if (partySlot) {
+      partySlot.updateMode(newMode);
+    }
+
+    // Switch animation based on mode
+    const animation = newMode === 'combat' ? getAttackAnimation() : getIdleAnimation();
+    this.updateSlotAnimation(slotIndex, animation);
+  }
+
+  /**
+   * Get all active (non-null) party members
+   */
+  private getActivePartyMembers(): PartyCharacter[] {
+    return this.partyCharacters.filter(
+      (c): c is PartyCharacter => c !== null
+    );
+  }
+
+  /**
+   * Update party slot UI to reflect stat changes
+   */
+  private updatePartySlotStats(): void {
+    for (let i = 0; i < this.partySlots.length; i++) {
+      const character = this.partyCharacters[i];
+      if (character) {
+        this.partySlots[i].updateCharacter(character);
+      }
     }
   }
 
@@ -789,7 +975,9 @@ export class MainScene extends BaseScene {
     const glowLine = this.partyLayer.getChildByName('partyFieldDividerGlow') as Graphics;
     if (!divider) return;
 
-    if (divider.alpha > 0.5) return;
+    if (this.isDividerAnimating) return;
+
+    this.isDividerAnimating = true;
 
     const startTime = Date.now();
     const duration = 500;
@@ -799,6 +987,9 @@ export class MainScene extends BaseScene {
     const glowPeakAlpha = 0.6;
 
     const animate = (): void => {
+      // Stop if scene is being destroyed
+      if (!this.isDividerAnimating) return;
+
       const elapsed = Date.now() - startTime;
       const progress = Math.min(elapsed / duration, 1);
 
@@ -827,6 +1018,7 @@ export class MainScene extends BaseScene {
         if (glowLine) {
           glowLine.alpha = glowOriginalAlpha;
         }
+        this.isDividerAnimating = false;
       }
     };
 
@@ -874,6 +1066,11 @@ export class MainScene extends BaseScene {
     // Pause update loop during map transition
     this.isChangingMap = true;
 
+    // Set all characters to idle when changing maps
+    const activeParty = this.getActivePartyMembers();
+    this.autoCombatSystem.setAllIdle(activeParty);
+    this.renderPartySlots();
+
     this.monsterSystem.clearAll();
     this.dropSystem.clearAll();
     this.damageSystem.clearAll();
@@ -920,14 +1117,19 @@ export class MainScene extends BaseScene {
   // ============================================================================
 
   private async loadMapAssets(): Promise<void> {
-    if (!this.mapInfo) return;
+    const mapInfo = this.mapInfo;
+    if (!mapInfo) return;
 
     const assetManager = AssetManager.getInstance();
 
+    // Revoke old blob URLs before loading new assets
+    this.revokeBlobUrls();
     this.mobGifSources.clear();
     this.mobSounds.clear();
 
-    for (const mobSpawn of this.mapInfo.spawns.normal.mobs) {
+    if (!mapInfo.spawns) return;
+
+    for (const mobSpawn of mapInfo.spawns.normal.mobs) {
       const mob = getMobById(mobSpawn.mobId);
       if (mob) {
         for (const animation of MOB_ANIMATIONS) {
@@ -956,7 +1158,7 @@ export class MainScene extends BaseScene {
       this.itemPickupSound = this.createAudioFromBase64(pickupSoundData);
     }
 
-    console.log(`[MainScene] Loaded assets for map: [map]=[${this.mapInfo.name}]`);
+    console.log(`[MainScene] Loaded assets for map: [map]=[${mapInfo.name}]`);
   }
 
   private createAudioFromBase64(base64Data: string): HTMLAudioElement {
@@ -968,7 +1170,18 @@ export class MainScene extends BaseScene {
     const byteArray = new Uint8Array(byteNumbers);
     const blob = new Blob([byteArray], { type: 'audio/mpeg' });
     const blobUrl = URL.createObjectURL(blob);
+
+    // Track blob URL for cleanup
+    this.blobUrls.push(blobUrl);
+
     return new Audio(blobUrl);
+  }
+
+  private revokeBlobUrls(): void {
+    for (const url of this.blobUrls) {
+      URL.revokeObjectURL(url);
+    }
+    this.blobUrls = [];
   }
 
   // ============================================================================
@@ -1014,25 +1227,54 @@ export class MainScene extends BaseScene {
   // ============================================================================
 
   async destroy(): Promise<void> {
+    // Cancel pending divider animation
+    this.isDividerAnimating = false;
+
+    this.autoCombatSystem.destroy();
     this.fieldView.removeClickHandler();
     this.monsterSystem.clearAll();
     this.dropSystem.clearAll();
     this.damageSystem.clearAll();
     this.logSystem.destroy();
 
-    this.mobGifSources.clear();
+    // Stop and cleanup audio resources
+    for (const audio of this.mobSounds.values()) {
+      audio.pause();
+      audio.src = '';
+    }
     this.mobSounds.clear();
-    this.itemPickupSound = null;
+
+    if (this.itemPickupSound) {
+      this.itemPickupSound.pause();
+      this.itemPickupSound.src = '';
+      this.itemPickupSound = null;
+    }
+
+    // Revoke all blob URLs
+    this.revokeBlobUrls();
+    this.mobGifSources.clear();
+
+    // Cleanup UI event listeners
+    if (this.mapTitleText) {
+      this.mapTitleText.off('pointerdown');
+    }
 
     if (this.mapSelectionUI) {
       this.mapSelectionUI.destroy();
       this.mapSelectionUI = null;
     }
 
+    if (this.characterCreationUI) {
+      this.characterCreationUI.destroy();
+      this.characterCreationUI = null;
+    }
+
     if (this.inventoryUI) {
       this.inventoryUI.destroy();
       this.inventoryUI = null;
     }
+
+    this.clearPartySlots();
 
     await super.destroy();
   }

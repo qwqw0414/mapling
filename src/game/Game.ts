@@ -2,6 +2,7 @@ import { Application } from 'pixi.js';
 import { GAME_CONFIG, updateMapSize } from '@/constants/config';
 import type { BaseScene } from './scenes/BaseScene';
 import { MainScene } from './scenes/MainScene';
+import { AssetManager } from './systems/AssetManager';
 
 // ============================================================================
 // Game Class
@@ -44,6 +45,10 @@ export class Game {
     });
 
     this.container.appendChild(this.app.canvas);
+
+    // Initialize persistent asset cache (IndexedDB)
+    await AssetManager.getInstance().init();
+
     this.setupGameLoop();
     this.setupResizeListener();
     this.isInitialized = true;

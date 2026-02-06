@@ -63,6 +63,10 @@ export class MonsterSystem {
   private fieldWidth: number;
   private fieldHeight: number;
 
+  // Cached field bounds (recalculated on resize)
+  private fieldMinX = 0;
+  private fieldMaxX = 0;
+
   private spawnTimer = 0;
   private monsterIdCounter = 0;
 
@@ -70,6 +74,7 @@ export class MonsterSystem {
     this.fieldLayer = fieldLayer;
     this.fieldWidth = fieldWidth;
     this.fieldHeight = fieldHeight;
+    this.updateFieldBoundsCache();
   }
 
   // ============================================================================
@@ -87,7 +92,14 @@ export class MonsterSystem {
   setFieldDimensions(width: number, height: number): void {
     this.fieldWidth = width;
     this.fieldHeight = height;
+    this.updateFieldBoundsCache();
     this.updateMonstersFieldBounds();
+  }
+
+  private updateFieldBoundsCache(): void {
+    const fieldPadding = LAYOUT_CONFIG.FIELD_AREA.PADDING;
+    this.fieldMinX = fieldPadding + 50;
+    this.fieldMaxX = this.fieldWidth - fieldPadding - 50;
   }
 
   getMonster(instanceId: string): MonsterState | undefined {
@@ -142,12 +154,8 @@ export class MonsterSystem {
 
     const instanceId = `mob_${++this.monsterIdCounter}`;
 
-    const fieldPadding = LAYOUT_CONFIG.FIELD_AREA.PADDING;
-    const minX = fieldPadding + 50;
-    const maxX = this.fieldWidth - fieldPadding - 50;
     const groundY = this.fieldHeight - 30;
-
-    const x = minX + Math.random() * (maxX - minX);
+    const x = this.fieldMinX + Math.random() * (this.fieldMaxX - this.fieldMinX);
     const y = groundY;
 
     const speedMultiplier = 1 + (mob.meta.speed / 100);
@@ -313,10 +321,8 @@ export class MonsterSystem {
   updateMonsters(deltaTime: number): void {
     const now = Date.now();
     const { FADE_IN_DURATION, JUMP_VELOCITY, GRAVITY } = MONSTER_BEHAVIOR_CONFIG;
-
-    const fieldPadding = LAYOUT_CONFIG.FIELD_AREA.PADDING;
-    const minX = fieldPadding + 50;
-    const maxX = this.fieldWidth - fieldPadding - 50;
+    const minX = this.fieldMinX;
+    const maxX = this.fieldMaxX;
 
     for (const [id, monster] of this.monsters) {
       const sprite = this.monsterSprites.get(id);
@@ -428,10 +434,6 @@ export class MonsterSystem {
   }
 
   private updateMonstersFieldBounds(): void {
-    const fieldPadding = LAYOUT_CONFIG.FIELD_AREA.PADDING;
-    const minX = fieldPadding + 50;
-    const maxX = this.fieldWidth - fieldPadding - 50;
-
     for (const [id, monster] of this.monsters) {
       const groundY = this.fieldHeight - 30;
       monster.baseY = groundY;
@@ -439,7 +441,7 @@ export class MonsterSystem {
         monster.y = groundY;
       }
 
-      monster.x = Math.max(minX, Math.min(maxX, monster.x));
+      monster.x = Math.max(this.fieldMinX, Math.min(this.fieldMaxX, monster.x));
 
       const sprite = this.monsterSprites.get(id);
       if (sprite) {

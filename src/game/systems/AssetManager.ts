@@ -131,7 +131,7 @@ export class AssetManager {
       const arrayBuffer = await response.arrayBuffer();
 
       // Store raw ArrayBuffer in IndexedDB (fire and forget)
-      this.cacheDB.put(STORE_NAMES.MOB_GIFS, cacheKey, arrayBuffer).catch(() => {});
+      this.cacheDB.put(STORE_NAMES.MOB_GIFS, cacheKey, arrayBuffer).catch(() => { });
 
       return await GifSource.from(arrayBuffer);
     } catch (error) {
@@ -206,9 +206,8 @@ export class AssetManager {
   ): Promise<GifSource | null> {
     try {
       const itemsStr = buildItemsString(look);
-      // renderMode=4 (FeetCenter): feet always at canvas center for consistent vertical alignment
-      const url = `${GAME_CONFIG.API_BASE_URL}/${GAME_CONFIG.API_REGION}/${GAME_CONFIG.API_VERSION}/Character/animated/${look.skinId}/${itemsStr}/${animation}?renderMode=4`;
-      console.log(`[AssetManager] Fetching character GIF: [skinId]=[${look.skinId}] [animation]=[${animation}]`);
+      const url = `${GAME_CONFIG.API_BASE_URL}/${GAME_CONFIG.API_REGION}/${GAME_CONFIG.API_VERSION}/Character/animated/${look.skinId}/${itemsStr}/${animation}?padding=0&renderMode=0`;
+      console.log(`[AssetManager] Fetching character GIF: [url]=[${url}]`);
 
       const response = await fetch(url);
       if (!response.ok) {
@@ -218,7 +217,7 @@ export class AssetManager {
       const arrayBuffer = await response.arrayBuffer();
 
       // Store in IndexedDB (fire and forget)
-      this.cacheDB.put(STORE_NAMES.CHARACTER_GIFS, cacheKey, arrayBuffer).catch(() => {});
+      this.cacheDB.put(STORE_NAMES.CHARACTER_GIFS, cacheKey, arrayBuffer).catch(() => { });
 
       return await GifSource.from(arrayBuffer);
     } catch (error) {
@@ -300,7 +299,7 @@ export class AssetManager {
 
       if (data.type === 11 && data.value) {
         // Store in IndexedDB (fire and forget)
-        this.cacheDB.put(STORE_NAMES.BGM, cacheKey, data.value).catch(() => {});
+        this.cacheDB.put(STORE_NAMES.BGM, cacheKey, data.value).catch(() => { });
         return data.value;
       }
 
@@ -372,7 +371,7 @@ export class AssetManager {
       const data = await response.json();
 
       if (data.type === 11 && data.value) {
-        this.cacheDB.put(STORE_NAMES.MOB_SOUNDS, cacheKey, data.value).catch(() => {});
+        this.cacheDB.put(STORE_NAMES.MOB_SOUNDS, cacheKey, data.value).catch(() => { });
         return data.value;
       }
 
@@ -443,7 +442,7 @@ export class AssetManager {
       const data = await response.json();
 
       if (data.type === 11 && data.value) {
-        this.cacheDB.put(STORE_NAMES.GAME_SOUNDS, cacheKey, data.value).catch(() => {});
+        this.cacheDB.put(STORE_NAMES.GAME_SOUNDS, cacheKey, data.value).catch(() => { });
         return data.value;
       }
 
@@ -518,7 +517,7 @@ export class AssetManager {
       const blob = await response.blob();
 
       // Store in IndexedDB (fire and forget)
-      this.cacheDB.put(STORE_NAMES.IMAGES, cacheKey, blob).catch(() => {});
+      this.cacheDB.put(STORE_NAMES.IMAGES, cacheKey, blob).catch(() => { });
 
       return blob;
     } catch (error) {

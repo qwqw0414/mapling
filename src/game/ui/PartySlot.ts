@@ -37,14 +37,14 @@ export class PartySlot extends Container {
 
   // Animation tracking
   private isAttackAnimating = false;
-  
+
   private character: PartyCharacter | null = null;
-  
+
   // UI Elements
   private readonly background: Graphics;
   private readonly emptyIndicator: Container;
   private readonly characterContainer: Container;
-  
+
   private characterSprite: GifSprite | Sprite | null = null;
   private hpBar: StatusBar | null = null;
   private mpBar: StatusBar | null = null;
@@ -65,7 +65,7 @@ export class PartySlot extends Container {
    */
   constructor(options: PartySlotOptions) {
     super();
-    
+
     this.slotWidth = options.width;
     this.slotHeight = options.height;
     this.slotIndex = options.slotIndex;
@@ -88,7 +88,7 @@ export class PartySlot extends Container {
 
     // Initial render
     this.drawBackground();
-    
+
     if (options.character) {
       this.setCharacter(options.character);
     }
@@ -106,7 +106,7 @@ export class PartySlot extends Container {
    */
   public setCharacter(character: PartyCharacter | null): void {
     this.character = character;
-    
+
     if (character) {
       this.showCharacterUI(character);
     } else {
@@ -171,10 +171,9 @@ export class PartySlot extends Container {
       autoPlay: true,
       loop: true,
     });
-    // FeetCenter: anchor (0.5, 0.5) = feet position (canvas center).
-    // Place feet at sprite area bottom so character body extends upward.
-    gifSprite.anchor.set(0.5, 0.5);
-    gifSprite.x = this.slotWidth / 2;
+    // Anchor at bottom-right for consistent animation alignment
+    gifSprite.anchor.set(1, 1);
+    gifSprite.x = this.slotWidth / 2 + 30;
     gifSprite.y = spriteBottomY;
 
     this.characterSprite = gifSprite;
@@ -197,7 +196,7 @@ export class PartySlot extends Container {
 
       const elapsed = Date.now() - startTime;
       const progress = Math.min(elapsed / duration, 1);
-      
+
       const scale = originalScale + Math.sin(progress * Math.PI) * 0.1;
       this.characterSprite.scale.set(scale);
 
@@ -219,7 +218,7 @@ export class PartySlot extends Container {
     this.slotWidth = width;
     this.slotHeight = height;
     this.drawBackground();
-    
+
     // Re-layout character UI if character exists
     if (this.character) {
       this.showCharacterUI(this.character);
@@ -234,10 +233,10 @@ export class PartySlot extends Container {
 
   private createEmptyIndicator(): Container {
     const container = new Container();
-    
+
     const plusSize = SLOT_CONFIG.EMPTY_SLOT.PLUS_SIZE;
     const plusColor = SLOT_CONFIG.EMPTY_SLOT.PLUS_COLOR;
-    
+
     const plusGraphics = new Graphics();
     plusGraphics.rect(-plusSize / 2, -2, plusSize, 4);
     plusGraphics.fill({ color: plusColor });
@@ -260,7 +259,7 @@ export class PartySlot extends Container {
     // Set initial position
     container.x = this.slotWidth / 2;
     container.y = this.slotHeight / 2;
-    
+
     return container;
   }
 
@@ -290,7 +289,7 @@ export class PartySlot extends Container {
     // Calculate layout areas
     const spriteHeight = this.slotHeight * SLOT_CONFIG.SPRITE_HEIGHT_RATIO;
     const statsStartY = this.padding + spriteHeight;
-    
+
     // Character name & level
     this.createCharacterInfo(character, statsStartY);
 
@@ -367,7 +366,7 @@ export class PartySlot extends Container {
     this.expBar = new StatusBar(barWidth, 'EXP', 0xFFDD55);
     this.expBar.x = this.padding;
     this.expBar.y = startY + (SLOT_CONFIG.STAT_BAR.HEIGHT + barGap) * 2;
-    
+
     // Calculate required exp (simplified formula)
     const requiredExp = this.calculateRequiredExp(character.level);
     this.expBar.updateValues(character.exp, requiredExp);
@@ -376,12 +375,12 @@ export class PartySlot extends Container {
 
   private createSkillBar(character: PartyCharacter, y: number): void {
     this.skillBar = new SkillBar();
-    
+
     // Center skill bar
     const skillBarWidth = this.skillBar.getTotalWidth();
     this.skillBar.x = (this.slotWidth - skillBarWidth) / 2;
     this.skillBar.y = y;
-    
+
     // Initialize skill slots with character's equipped skills
     for (let i = 0; i < character.equippedSkillSlots.length && i < 6; i++) {
       const skillId = character.equippedSkillSlots[i];
@@ -392,7 +391,7 @@ export class PartySlot extends Container {
         });
       }
     }
-    
+
     this.characterContainer.addChild(this.skillBar);
   }
 

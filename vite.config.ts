@@ -1,7 +1,18 @@
 import { defineConfig } from 'vite';
 import { resolve } from 'path';
+import electron from 'vite-plugin-electron/simple';
 
 export default defineConfig({
+  plugins: [
+    electron({
+      main: {
+        entry: 'electron/main.ts',
+      },
+      preload: {
+        input: 'electron/preload.ts',
+      },
+    }),
+  ],
   resolve: {
     alias: {
       '@': resolve(__dirname, 'src'),
@@ -15,7 +26,6 @@ export default defineConfig({
   },
   server: {
     port: 3000,
-    open: true,
   },
   build: {
     target: 'ES2022',

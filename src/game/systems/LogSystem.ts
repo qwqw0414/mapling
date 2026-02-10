@@ -2,7 +2,7 @@ import { Container, Text } from 'pixi.js';
 import { LAYOUT_CONFIG } from '@/constants/config';
 
 // ============================================================================
-// Log System
+// Log System (필드 우측 상단 오버레이)
 // ============================================================================
 
 interface LogEntry {
@@ -13,30 +13,15 @@ interface LogEntry {
 export class LogSystem {
   private logLayer: Container;
   private logEntries: Array<LogEntry> = [];
+  private readonly fieldWidth: number;
 
-  constructor(logLayer: Container) {
-    this.logLayer = logLayer;
-    this.createLogTitle();
-  }
+  constructor(fieldLayer: Container, fieldWidth: number) {
+    this.fieldWidth = fieldWidth;
 
-  // ============================================================================
-  // Initialization
-  // ============================================================================
-
-  private createLogTitle(): void {
-    const padding = LAYOUT_CONFIG.LOG_AREA.PADDING;
-
-    const logTitle = new Text({
-      text: '[로그]',
-      style: {
-        fontSize: 12,
-        fill: 0x888888,
-        fontFamily: 'Arial',
-      },
-    });
-    logTitle.x = padding;
-    logTitle.y = 5;
-    this.logLayer.addChild(logTitle);
+    // 로그 컨테이너를 필드 레이어 위에 오버레이로 생성
+    this.logLayer = new Container();
+    this.logLayer.label = 'logOverlay';
+    fieldLayer.addChild(this.logLayer);
   }
 
   // ============================================================================
@@ -44,8 +29,7 @@ export class LogSystem {
   // ============================================================================
 
   addLog(message: string, color: number = 0xFFFFFF): void {
-    const padding = LAYOUT_CONFIG.LOG_AREA.PADDING;
-    const maxEntries = LAYOUT_CONFIG.LOG_AREA.MAX_ENTRIES;
+    const maxEntries = LAYOUT_CONFIG.LOG.MAX_ENTRIES;
 
     const logText = new Text({
       text: message,
@@ -55,12 +39,12 @@ export class LogSystem {
         fontFamily: 'Arial',
         dropShadow: {
           color: 0x000000,
-          blur: 1,
+          blur: 2,
           distance: 1,
+          alpha: 0.9,
         },
       },
     });
-    logText.x = padding;
 
     this.logEntries.unshift({ text: logText, createdAt: Date.now() });
 
@@ -94,8 +78,8 @@ export class LogSystem {
 
   updateLogEntries(): void {
     const now = Date.now();
-    const fadeStart = LAYOUT_CONFIG.LOG_AREA.FADE_START_MS;
-    const fadeDuration = LAYOUT_CONFIG.LOG_AREA.FADE_DURATION_MS;
+    const fadeStart = LAYOUT_CONFIG.LOG.FADE_START_MS;
+    const fadeDuration = LAYOUT_CONFIG.LOG.FADE_DURATION_MS;
 
     for (let i = this.logEntries.length - 1; i >= 0; i--) {
       const entry = this.logEntries[i];
@@ -120,8 +104,13 @@ export class LogSystem {
   // ============================================================================
 
   private updateLogPositions(): void {
-    let y = 22;
+    const padding = LAYOUT_CONFIG.LOG.PADDING;
+
+    let y = padding;
     for (const entry of this.logEntries) {
+      // 우측 상단 정렬: 텍스트를 우측에 배치
+      entry.text.anchor.set(1, 0);
+      entry.text.x = this.fieldWidth - padding;
       entry.text.y = y;
       y += 14;
     }

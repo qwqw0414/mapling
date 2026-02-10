@@ -5,7 +5,6 @@ import {
   MAP_CONFIG,
   GAME_CONFIG,
   LAYOUT_CONFIG,
-  SLOT_CONFIG,
 } from '@/constants/config';
 import { getMapById } from '@/data/maps';
 import { getMobById } from '@/data/mobs';
@@ -25,28 +24,138 @@ import { InventoryUI } from '@/game/ui/InventoryUI';
 import { useCharacterStore } from '@/stores/characterStore';
 import { useInventoryStore } from '@/stores/inventoryStore';
 import {
-  createDefaultLook,
-  PRIORITY_ANIMATIONS,
-  SECONDARY_ANIMATIONS,
+  createLookWithChoices,
+  CORE_ANIMATIONS,
   getIdleAnimation,
-  getAttackAnimation,
+  getRandomAttackAnimation,
+  getWeaponPreloadAnimations,
 } from '@/data/characterLook';
 import type { MapInfo } from '@/types/map';
 import type { PartyCharacter } from '@/types/party';
 import type { Stats } from '@/types/character';
-import type { ItemCategory } from '@/types/item';
+import type { ItemCategory, EquipItem, Equipment, EquipSlot } from '@/types/item';
+
+// ============================================================================
+// Equipment Stat Calculation
+// ============================================================================
+
+const BASE_WEAPON_ATTACK = 15;
+const BASE_MAGIC_ATTACK = 15;
+
+/**
+ * Recalculate character stats from all equipped items
+ * Updates weaponAttack, magicAttack, and bonus stats on the character
+ */
+function applyEquipmentStats(character: PartyCharacter): void {
+  let totalAttackPower = 0;
+  let totalMagicPower = 0;
+
+  const equipment = character.equipment;
+  const slots = Object.keys(equipment) as EquipSlot[];
+
+  for (const slot of slots) {
+    const item = equipment[slot];
+    if (!item) continue;
+
+    totalAttackPower += item.attackPower;
+    totalMagicPower += item.magicPower;
+  }
+
+  character.weaponAttack = BASE_WEAPON_ATTACK + totalAttackPower;
+  character.magicAttack = BASE_MAGIC_ATTACK + totalMagicPower;
+}
+
+/**
+ * Get the equipped weapon item ID (null if no weapon)
+ */
+function getWeaponId(character: PartyCharacter): number | null {
+  return character.equipment.weapon?.id ?? null;
+}
+
+/**
+ * Check if a character has a weapon equipped
+ */
+function hasWeapon(character: PartyCharacter): boolean {
+  return character.equipment.weapon !== null;
+}
+
+/**
+ * Sync character.look.equipItemIds from current equipment state
+ * Called after equip/unequip to update visual appearance
+ */
+function syncLookFromEquipment(character: PartyCharacter): void {
+  const equipIds: number[] = [];
+  const equipment = character.equipment;
+  const slots = Object.keys(equipment) as EquipSlot[];
+
+  for (const slot of slots) {
+    const item = equipment[slot];
+    if (item) {
+      equipIds.push(item.id);
+    }
+  }
+
+  character.look = {
+    ...character.look,
+    equipItemIds: equipIds,
+  };
+}
+
+// ============================================================================
+// Beginner Starter Equipment
+// ============================================================================
+
+function createStarterEquipItem(
+  id: number, name: string, slot: EquipSlot,
+  defense: number = 0, attackPower: number = 0,
+): EquipItem {
+  return {
+    id, name, description: '초보자용 기본 장비',
+    category: 'equip',
+    iconUrl: `https://maplestory.io/api/gms/62/item/${id}/icon`,
+    sellPrice: 1, slot, grade: 'common',
+    requiredLevel: 0, requiredJob: [],
+    stats: {}, combatStats: {},
+    attackPower, magicPower: 0, defense,
+    upgradeSlots: 7, usedSlots: 0,
+  };
+}
+
+const BEGINNER_EQUIPMENT: Partial<Record<EquipSlot, EquipItem>> = {
+  top: createStarterEquipItem(1040002, '흰색 런닝셔츠', 'top', 2),
+  bottom: createStarterEquipItem(1060002, '파란 청 반바지', 'bottom', 1),
+  shoes: createStarterEquipItem(1072005, '파란 운동화', 'shoes', 1),
+  weapon: createStarterEquipItem(1402001, '목검', 'weapon', 0, 17),
+};
+
+function createBeginnerEquipment(): Equipment {
+  return {
+    weapon: BEGINNER_EQUIPMENT.weapon ?? null,
+    hat: null,
+    top: BEGINNER_EQUIPMENT.top ?? null,
+    bottom: BEGINNER_EQUIPMENT.bottom ?? null,
+    overall: null,
+    shoes: BEGINNER_EQUIPMENT.shoes ?? null,
+    gloves: null,
+    cape: null,
+    accessory: null,
+    shield: null,
+  };
+}
 
 // ============================================================================
 // Types
 // ============================================================================
 
 interface LayoutDimensions {
-  header: { x: number; y: number; width: number; height: number };
-  party: { x: number; y: number; width: number; height: number };
-  partySlots: { x: number; y: number; width: number; height: number };
+  /** 좌측 패널 - 사냥터 필드 (70%) */
+  leftPanel: { x: number; y: number; width: number; height: number };
+  /** 우측 패널 전체 (30%) */
+  rightPanel: { x: number; y: number; width: number; height: number };
+  /** 우측 상단 - 인벤토리 */
   inventory: { x: number; y: number; width: number; height: number };
-  field: { x: number; y: number; width: number; height: number };
-  log: { x: number; y: number; width: number; height: number };
+  /** 우측 하단 - 파티 슬롯 (2x2) */
+  partySlots: { x: number; y: number; width: number; height: number };
 }
 
 // ============================================================================
@@ -63,10 +172,11 @@ export class MainScene extends BaseScene {
   private blobUrls: string[] = [];
 
   // Layout containers
-  private headerLayer!: Container;
-  private partyLayer!: Container;
+  private leftPanel!: Container;
+  private rightPanel!: Container;
   private fieldLayer!: Container;
-  private logLayer!: Container;
+  private inventoryContainer!: Container;
+  private partySlotsContainer!: Container;
 
   // Layout dimensions
   private layout!: LayoutDimensions;
@@ -92,10 +202,7 @@ export class MainScene extends BaseScene {
   private characterCreationUI: CharacterCreationUI | null = null;
   private mapSelectionUI: MapSelectionUI | null = null;
   private inventoryUI: InventoryUI | null = null;
-
-  // Party area sub-containers
-  private partySlotsContainer!: Container;
-  private inventoryContainer!: Container;
+  private addCharacterButton: Container | null = null;
 
   // Party data
   private partyCharacters: Array<PartyCharacter | null> = [];
@@ -129,9 +236,9 @@ export class MainScene extends BaseScene {
     this.calculateLayout();
     this.createLayers();
     this.initializeSystems();
-    this.createHeader();
-    this.createPartyArea();
-    this.createPartyFieldDivider();
+    this.createMapButton();
+    this.createRightPanel();
+    this.createVerticalDivider();
     this.monsterSystem.spawnInitialMonsters();
 
     console.log('[MainScene] Created with layout:', this.layout);
@@ -157,22 +264,17 @@ export class MainScene extends BaseScene {
     const width = MAP_CONFIG.WIDTH;
     const height = MAP_CONFIG.HEIGHT;
 
-    const headerHeight = LAYOUT_CONFIG.HEADER.HEIGHT;
-    const partyHeight = Math.floor((height - headerHeight) * LAYOUT_CONFIG.PARTY_AREA.HEIGHT_RATIO);
-    const logHeight = Math.floor((height - headerHeight) * LAYOUT_CONFIG.LOG_AREA.HEIGHT_RATIO);
-    const fieldHeight = height - headerHeight - partyHeight - logHeight;
+    const leftWidth = Math.floor(width * LAYOUT_CONFIG.LEFT_PANEL.WIDTH_RATIO);
+    const rightWidth = width - leftWidth;
 
-    // Inventory fixed width, party slots take remaining space
-    const inventoryWidth = LAYOUT_CONFIG.PARTY_AREA.INVENTORY_WIDTH;
-    const partySlotsWidth = width - inventoryWidth;
+    const inventoryHeight = Math.floor(height * LAYOUT_CONFIG.RIGHT_PANEL.INVENTORY_HEIGHT_RATIO);
+    const partyHeight = height - inventoryHeight;
 
     this.layout = {
-      header: { x: 0, y: 0, width: width, height: headerHeight },
-      party: { x: 0, y: headerHeight, width: width, height: partyHeight },
-      partySlots: { x: 0, y: 0, width: partySlotsWidth, height: partyHeight },
-      inventory: { x: partySlotsWidth, y: 0, width: inventoryWidth, height: partyHeight },
-      field: { x: 0, y: headerHeight + partyHeight, width: width, height: fieldHeight },
-      log: { x: 0, y: headerHeight + partyHeight + fieldHeight, width: width, height: logHeight },
+      leftPanel: { x: 0, y: 0, width: leftWidth, height: height },
+      rightPanel: { x: leftWidth, y: 0, width: rightWidth, height: height },
+      inventory: { x: 0, y: 0, width: rightWidth, height: inventoryHeight },
+      partySlots: { x: 0, y: inventoryHeight, width: rightWidth, height: partyHeight },
     };
   }
 
@@ -181,39 +283,41 @@ export class MainScene extends BaseScene {
   // ============================================================================
 
   private createLayers(): void {
-    this.headerLayer = new Container();
-    this.partyLayer = new Container();
+    // 좌측 패널 (사냥터 필드)
+    this.leftPanel = new Container();
+    this.leftPanel.x = this.layout.leftPanel.x;
+    this.leftPanel.y = this.layout.leftPanel.y;
+    this.container.addChild(this.leftPanel);
+
+    // 필드 레이어 (leftPanel 내부)
     this.fieldLayer = new Container();
-    this.logLayer = new Container();
+    this.leftPanel.addChild(this.fieldLayer);
 
-    this.headerLayer.y = this.layout.header.y;
-    this.partyLayer.y = this.layout.party.y;
-    this.fieldLayer.y = this.layout.field.y;
-    this.logLayer.y = this.layout.log.y;
+    // 우측 패널 (인벤토리 + 파티)
+    this.rightPanel = new Container();
+    this.rightPanel.x = this.layout.rightPanel.x;
+    this.rightPanel.y = this.layout.rightPanel.y;
+    this.container.addChild(this.rightPanel);
 
-    this.container.addChild(this.headerLayer);
-    this.container.addChild(this.partyLayer);
-    this.container.addChild(this.fieldLayer);
-    this.container.addChild(this.logLayer);
+    // 우측 패널 배경
+    const rightBg = new Graphics();
+    rightBg.label = 'rightPanelBg';
+    rightBg.rect(0, 0, this.layout.rightPanel.width, this.layout.rightPanel.height);
+    rightBg.fill({ color: 0x111111 });
+    rightBg.stroke({ color: 0x333333, width: 1 });
+    this.rightPanel.addChild(rightBg);
 
-    this.drawLayoutDebug();
-  }
+    // 인벤토리 컨테이너 (우측 상단)
+    this.inventoryContainer = new Container();
+    this.inventoryContainer.x = this.layout.inventory.x;
+    this.inventoryContainer.y = this.layout.inventory.y;
+    this.rightPanel.addChild(this.inventoryContainer);
 
-  private drawLayoutDebug(): void {
-    const borders = [
-      { layer: this.headerLayer, layout: this.layout.header },
-      { layer: this.partyLayer, layout: this.layout.party },
-      { layer: this.fieldLayer, layout: this.layout.field },
-      { layer: this.logLayer, layout: this.layout.log },
-    ];
-
-    for (const { layer, layout } of borders) {
-      const border = new Graphics();
-      border.label = 'debugBorder';
-      border.rect(0, 0, layout.width, layout.height);
-      border.stroke({ color: 0x333333, width: 1 });
-      layer.addChild(border);
-    }
+    // 파티 슬롯 컨테이너 (우측 하단)
+    this.partySlotsContainer = new Container();
+    this.partySlotsContainer.x = this.layout.partySlots.x;
+    this.partySlotsContainer.y = this.layout.partySlots.y;
+    this.rightPanel.addChild(this.partySlotsContainer);
   }
 
   // ============================================================================
@@ -221,10 +325,13 @@ export class MainScene extends BaseScene {
   // ============================================================================
 
   private initializeSystems(): void {
+    const fieldWidth = this.layout.leftPanel.width;
+    const fieldHeight = this.layout.leftPanel.height;
+
     this.monsterSystem = new MonsterSystem(
       this.fieldLayer,
-      this.layout.field.width,
-      this.layout.field.height
+      fieldWidth,
+      fieldHeight
     );
     this.monsterSystem.setMap(this.mapInfo);
     this.monsterSystem.setMobAssets(this.mobGifSources);
@@ -234,9 +341,9 @@ export class MainScene extends BaseScene {
 
     this.dropSystem = new DropSystem(
       this.fieldLayer,
-      this.partyLayer,
-      this.layout.field.width,
-      this.layout.field.height
+      this.rightPanel,
+      fieldWidth,
+      fieldHeight
     );
     this.dropSystem.setItemPickupSound(this.itemPickupSound);
     this.dropSystem.setCallbacks({
@@ -246,12 +353,13 @@ export class MainScene extends BaseScene {
       onDividerEffect: () => this.playDividerEffect(),
     });
 
-    this.logSystem = new LogSystem(this.logLayer);
+    // 로그 시스템 - 필드 레이어 위에 오버레이
+    this.logSystem = new LogSystem(this.fieldLayer, fieldWidth);
 
     this.fieldView = new FieldView(
       this.fieldLayer,
-      this.layout.field.width,
-      this.layout.field.height
+      fieldWidth,
+      fieldHeight
     );
 
     // Auto-combat system (replaces click-based attack)
@@ -265,71 +373,37 @@ export class MainScene extends BaseScene {
   }
 
   // ============================================================================
-  // Header Area
+  // Map Button (필드 좌측 상단 오버레이)
   // ============================================================================
 
-  private createHeader(): void {
+  private createMapButton(): void {
     if (!this.mapInfo) return;
 
-    const padding = LAYOUT_CONFIG.HEADER.PADDING;
+    const padding = LAYOUT_CONFIG.MAP_BUTTON.PADDING;
 
     this.mapTitleText = new Text({
       text: `${this.mapInfo.name} ▼`,
       style: {
-        fontSize: 18,
+        fontSize: 16,
         fill: 0xFFFFFF,
         fontWeight: 'bold',
         fontFamily: 'Arial',
-        dropShadow: { color: 0x000000, blur: 2, distance: 1 },
+        dropShadow: { color: 0x000000, blur: 3, distance: 1, alpha: 0.8 },
       },
     });
     this.mapTitleText.x = padding;
-    this.mapTitleText.y = (this.layout.header.height - this.mapTitleText.height) / 2;
+    this.mapTitleText.y = padding;
     this.mapTitleText.eventMode = 'static';
     this.mapTitleText.cursor = 'pointer';
     this.mapTitleText.on('pointerdown', () => this.openMapSelection());
-    this.headerLayer.addChild(this.mapTitleText);
-
-    this.updateAddCharacterButton();
-  }
-
-  private updateAddCharacterButton(): void {
-    if (this.createCharacterButton && this.createCharacterButton.parent === this.headerLayer) {
-      this.headerLayer.removeChild(this.createCharacterButton);
-      this.createCharacterButton.destroy();
-      this.createCharacterButton = null;
-    }
-
-    const maxSlots = LAYOUT_CONFIG.PARTY_AREA.MAX_SLOTS;
-    if (this.partyCharacters.length > 0 && this.partyCharacters.length < maxSlots) {
-      const padding = LAYOUT_CONFIG.HEADER.PADDING;
-
-      this.createCharacterButton = this.createSmallAddButton();
-
-      // Position on the right side of header
-      this.createCharacterButton.x = this.layout.header.width - padding - 32;
-      this.createCharacterButton.y = (this.layout.header.height - 32) / 2;
-
-      this.headerLayer.addChild(this.createCharacterButton);
-    }
+    this.fieldLayer.addChild(this.mapTitleText);
   }
 
   // ============================================================================
-  // Party Area
+  // Right Panel (인벤토리 + 파티 슬롯)
   // ============================================================================
 
-  private createPartyArea(): void {
-    // Create sub-containers for party slots and inventory
-    this.partySlotsContainer = new Container();
-    this.partySlotsContainer.x = this.layout.partySlots.x;
-    this.partySlotsContainer.y = this.layout.partySlots.y;
-    this.partyLayer.addChild(this.partySlotsContainer);
-
-    this.inventoryContainer = new Container();
-    this.inventoryContainer.x = this.layout.inventory.x;
-    this.inventoryContainer.y = this.layout.inventory.y;
-    this.partyLayer.addChild(this.inventoryContainer);
-
+  private createRightPanel(): void {
     this.renderPartySlots();
     this.createInventoryUI();
   }
@@ -338,23 +412,20 @@ export class MainScene extends BaseScene {
     this.clearPartySlots();
 
     const padding = LAYOUT_CONFIG.PARTY_AREA.PADDING;
-    const availableHeight = this.layout.partySlots.height - padding * 2;
-    const availableWidth = this.layout.partySlots.width;
-
-    const slotWidth = SLOT_CONFIG.WIDTH;
-    const slotHeight = Math.max(SLOT_CONFIG.HEIGHT, availableHeight);
     const slotGap = LAYOUT_CONFIG.PARTY_AREA.SLOT_GAP;
+    const columns = LAYOUT_CONFIG.PARTY_AREA.GRID_COLUMNS;
+    const availableWidth = this.layout.partySlots.width - padding * 2;
+    const availableHeight = this.layout.partySlots.height - padding * 2;
+
+    const slotWidth = Math.floor((availableWidth - slotGap * (columns - 1)) / columns);
+    const slotHeight = Math.floor((availableHeight - slotGap) / 2);
 
     if (this.partyCharacters.length === 0) {
       this.createCharacterButton = this.createAddCharacterButton(slotWidth, slotHeight, true);
-      this.createCharacterButton.x = (availableWidth - slotWidth) / 2;
-      this.createCharacterButton.y = padding;
+      this.createCharacterButton.x = padding + (availableWidth - slotWidth) / 2;
+      this.createCharacterButton.y = padding + (availableHeight - slotHeight) / 2;
       this.partySlotsContainer.addChild(this.createCharacterButton);
     } else {
-      const totalWidth = this.partyCharacters.length * slotWidth + (this.partyCharacters.length - 1) * slotGap;
-      const startX = (availableWidth - totalWidth) / 2;
-      const startY = padding;
-
       for (let i = 0; i < this.partyCharacters.length; i++) {
         const character = this.partyCharacters[i];
         const slot = this.createPartySlot(i, slotWidth, slotHeight);
@@ -363,14 +434,46 @@ export class MainScene extends BaseScene {
           slot.setCharacter(character);
         }
 
-        slot.x = startX + i * (slotWidth + slotGap);
-        slot.y = startY;
+        const col = i % columns;
+        const row = Math.floor(i / columns);
+        slot.x = padding + col * (slotWidth + slotGap);
+        slot.y = padding + row * (slotHeight + slotGap);
+
         this.partySlotsContainer.addChild(slot);
         this.partySlots.push(slot);
       }
+
+      this.updateAddCharacterButton(slotWidth, slotHeight);
+    }
+  }
+
+  private updateAddCharacterButton(slotWidth?: number, slotHeight?: number): void {
+    if (this.addCharacterButton && this.addCharacterButton.parent) {
+      this.addCharacterButton.parent.removeChild(this.addCharacterButton);
+      this.addCharacterButton.destroy();
+      this.addCharacterButton = null;
     }
 
-    this.updateAddCharacterButton();
+    const maxSlots = LAYOUT_CONFIG.PARTY_AREA.MAX_SLOTS;
+    if (this.partyCharacters.length > 0 && this.partyCharacters.length < maxSlots) {
+      const padding = LAYOUT_CONFIG.PARTY_AREA.PADDING;
+      const slotGap = LAYOUT_CONFIG.PARTY_AREA.SLOT_GAP;
+      const columns = LAYOUT_CONFIG.PARTY_AREA.GRID_COLUMNS;
+      const availableWidth = this.layout.partySlots.width - padding * 2;
+      const availableHeight = this.layout.partySlots.height - padding * 2;
+
+      const sw = slotWidth ?? Math.floor((availableWidth - slotGap * (columns - 1)) / columns);
+      const sh = slotHeight ?? Math.floor((availableHeight - slotGap) / 2);
+
+      const nextIndex = this.partyCharacters.length;
+      const col = nextIndex % columns;
+      const row = Math.floor(nextIndex / columns);
+
+      this.addCharacterButton = this.createAddCharacterButton(sw, sh, false);
+      this.addCharacterButton.x = padding + col * (sw + slotGap);
+      this.addCharacterButton.y = padding + row * (sh + slotGap);
+      this.partySlotsContainer.addChild(this.addCharacterButton);
+    }
   }
 
   private clearPartySlots(): void {
@@ -438,71 +541,29 @@ export class MainScene extends BaseScene {
     return button;
   }
 
-  private createSmallAddButton(): Container {
-    const button = new Container();
-    button.label = 'smallAddButton';
-
-    const buttonSize = 32;
-    const plusSize = 16;
-
-    const background = new Graphics();
-    background.circle(buttonSize / 2, buttonSize / 2, buttonSize / 2);
-    background.fill({ color: 0x4488ff });
-    background.stroke({ color: 0xFFFFFF, width: 2 });
-    button.addChild(background);
-
-    const plusGraphics = new Graphics();
-    plusGraphics.rect(buttonSize / 2 - plusSize / 2, buttonSize / 2 - 1.5, plusSize, 3);
-    plusGraphics.fill({ color: 0xFFFFFF });
-    plusGraphics.rect(buttonSize / 2 - 1.5, buttonSize / 2 - plusSize / 2, 3, plusSize);
-    plusGraphics.fill({ color: 0xFFFFFF });
-    button.addChild(plusGraphics);
-
-    button.eventMode = 'static';
-    button.cursor = 'pointer';
-    button.on('pointerdown', () => this.onAddCharacterClick());
-
-    button.on('pointerover', () => {
-      background.clear();
-      background.circle(buttonSize / 2, buttonSize / 2, buttonSize / 2);
-      background.fill({ color: 0x5599ff });
-      background.stroke({ color: 0xFFFFFF, width: 2 });
-    });
-
-    button.on('pointerout', () => {
-      background.clear();
-      background.circle(buttonSize / 2, buttonSize / 2, buttonSize / 2);
-      background.fill({ color: 0x4488ff });
-      background.stroke({ color: 0xFFFFFF, width: 2 });
-    });
-
-    return button;
-  }
-
   private onAddCharacterClick(): void {
     console.log('[MainScene] Add character clicked');
     this.showCharacterCreationUI();
   }
 
-  private createPartyFieldDivider(): void {
+  private createVerticalDivider(): void {
+    const dividerX = this.layout.leftPanel.width;
+    const padding = 20;
+
     const divider = new Graphics();
-    divider.label = 'partyFieldDivider';
-
-    const lineY = this.layout.party.height;
-    const padding = 30;
-
-    divider.moveTo(padding, lineY);
-    divider.lineTo(this.layout.party.width - padding, lineY);
+    divider.label = 'verticalDivider';
+    divider.moveTo(dividerX, padding);
+    divider.lineTo(dividerX, MAP_CONFIG.HEIGHT - padding);
     divider.stroke({ color: 0x4488ff, width: 2 });
 
     const glowLine = new Graphics();
-    glowLine.label = 'partyFieldDividerGlow';
-    glowLine.moveTo(padding, lineY);
-    glowLine.lineTo(this.layout.party.width - padding, lineY);
+    glowLine.label = 'verticalDividerGlow';
+    glowLine.moveTo(dividerX, padding);
+    glowLine.lineTo(dividerX, MAP_CONFIG.HEIGHT - padding);
     glowLine.stroke({ color: 0x4488ff, width: 6, alpha: 0.2 });
 
-    this.partyLayer.addChild(glowLine);
-    this.partyLayer.addChild(divider);
+    this.container.addChild(glowLine);
+    this.container.addChild(divider);
 
     divider.alpha = 0.3;
     glowLine.alpha = 0.15;
@@ -516,6 +577,7 @@ export class MainScene extends BaseScene {
       character: null,
       onClick: (slotIndex: number) => this.onSlotClick(slotIndex),
       onToggleMode: (slotIndex: number) => this.handleToggleMode(slotIndex),
+      onUnequipItem: (slotIndex, equipSlot, item) => this.handleUnequipItem(slotIndex, equipSlot, item),
     });
   }
 
@@ -565,17 +627,19 @@ export class MainScene extends BaseScene {
   // ============================================================================
 
   private createInventoryUI(): void {
-    const padding = LAYOUT_CONFIG.PARTY_AREA.PADDING;
+    const padding = LAYOUT_CONFIG.RIGHT_PANEL.PADDING;
 
     this.inventoryUI = new InventoryUI({
-      width: this.layout.inventory.width - padding,
+      width: this.layout.inventory.width - padding * 2,
       height: this.layout.inventory.height - padding * 2,
       onTabChange: (tab) => this.onInventoryTabChange(tab),
       onSlotClick: (index, item) => this.onInventorySlotClick(index, item),
       onItemSwap: (category, fromIndex, toIndex) => this.onInventoryItemSwap(category, fromIndex, toIndex),
+      onDragOutside: (slotIndex, item, globalX, globalY) => this.handleInventoryDragOutside(slotIndex, item, globalX, globalY),
+      onDoubleClick: (slotIndex, item) => this.handleInventoryDoubleClick(slotIndex, item),
     });
 
-    this.inventoryUI.x = padding / 2;
+    this.inventoryUI.x = padding;
     this.inventoryUI.y = padding;
     this.inventoryContainer.addChild(this.inventoryUI);
 
@@ -636,6 +700,151 @@ export class MainScene extends BaseScene {
   }
 
   // ============================================================================
+  // Equipment Handlers (장착/해제)
+  // ============================================================================
+
+  /**
+   * Handle unequip: equipment slot clicked -> move item to inventory
+   */
+  private handleUnequipItem(slotIndex: number, equipSlot: EquipSlot, item: EquipItem): void {
+    const character = this.partyCharacters[slotIndex];
+    if (!character) return;
+
+    // Add item to inventory
+    const inventoryStore = useInventoryStore.getState();
+    const isAdded = inventoryStore.addItem(item);
+    if (!isAdded) {
+      console.log('[MainScene] Inventory full, cannot unequip');
+      return;
+    }
+
+    // Remove from character equipment
+    character.equipment[equipSlot] = null;
+
+    // Recalculate stats and sync visual appearance
+    applyEquipmentStats(character);
+    syncLookFromEquipment(character);
+
+    // Refresh UIs
+    const slot = this.partySlots[slotIndex];
+    if (slot) {
+      slot.setCharacter(character);
+      this.loadCharacterSprite(character);
+    }
+    this.refreshInventory();
+
+    console.log(`[MainScene] Unequipped: [slot]=[${equipSlot}] [item]=[${item.name}] [character]=[${character.name}] [weaponAttack]=[${character.weaponAttack}] [magicAttack]=[${character.magicAttack}]`);
+  }
+
+  /**
+   * Handle equip: inventory item dragged to equipment slot
+   */
+  private handleEquipItem(slotIndex: number, equipSlot: EquipSlot, _inventoryIndex: number, item: EquipItem): void {
+    const character = this.partyCharacters[slotIndex];
+    if (!character) return;
+
+    // Validate slot type
+    if (item.slot !== equipSlot) {
+      console.log(`[MainScene] Slot mismatch: [itemSlot]=[${item.slot}] [targetSlot]=[${equipSlot}]`);
+      return;
+    }
+
+    // If there's already an item in this slot, move it back to inventory first
+    const existingItem = character.equipment[equipSlot];
+    if (existingItem) {
+      const inventoryStore = useInventoryStore.getState();
+      const isAdded = inventoryStore.addItem(existingItem);
+      if (!isAdded) {
+        console.log('[MainScene] Inventory full, cannot swap equipment');
+        return;
+      }
+    }
+
+    // Remove from inventory
+    const inventoryStore = useInventoryStore.getState();
+    inventoryStore.removeItem(item.id);
+
+    // Equip to character
+    character.equipment[equipSlot] = item;
+
+    // Recalculate stats and sync visual appearance
+    applyEquipmentStats(character);
+    syncLookFromEquipment(character);
+
+    // Refresh UIs
+    const slot = this.partySlots[slotIndex];
+    if (slot) {
+      slot.setCharacter(character);
+      this.loadCharacterSprite(character);
+    }
+    this.refreshInventory();
+
+    console.log(`[MainScene] Equipped: [slot]=[${equipSlot}] [item]=[${item.name}] [character]=[${character.name}] [weaponAttack]=[${character.weaponAttack}] [magicAttack]=[${character.magicAttack}]`);
+  }
+
+  /**
+   * Handle inventory drag dropped outside inventory bounds
+   * Check if it was dropped over a PartySlot equipment view
+   */
+  private handleInventoryDragOutside(
+    inventoryIndex: number,
+    inventorySlot: import('@/types/item').InventorySlot,
+    globalX: number,
+    globalY: number,
+  ): void {
+    // Only equip items can be equipped
+    if (inventorySlot.item.category !== 'equip') return;
+
+    const equipItem = inventorySlot.item as EquipItem;
+
+    // Check each party slot's equipment view for drop target
+    for (let i = 0; i < this.partySlots.length; i++) {
+      const partySlot = this.partySlots[i];
+      const targetEquipSlot = partySlot.getEquipSlotAtGlobal(globalX, globalY);
+
+      if (targetEquipSlot) {
+        this.handleEquipItem(i, targetEquipSlot, inventoryIndex, equipItem);
+        return;
+      }
+    }
+
+    console.log('[MainScene] Inventory drag dropped outside - no valid equipment target');
+  }
+
+  /**
+   * Handle inventory double-click: auto-equip to active equip view character
+   * Finds a character whose equip view is open and equips to the matching slot
+   */
+  private handleInventoryDoubleClick(
+    _slotIndex: number,
+    inventorySlot: import('@/types/item').InventorySlot,
+  ): void {
+    if (inventorySlot.item.category !== 'equip') return;
+
+    const equipItem = inventorySlot.item as EquipItem;
+    const targetSlot = equipItem.slot;
+
+    // Find a character whose equip view is currently open
+    for (let i = 0; i < this.partySlots.length; i++) {
+      const partySlot = this.partySlots[i];
+      if (partySlot.getCurrentView() === 'equip' && this.partyCharacters[i]) {
+        this.handleEquipItem(i, targetSlot, _slotIndex, equipItem);
+        return;
+      }
+    }
+
+    // Fallback: equip to first available character
+    for (let i = 0; i < this.partyCharacters.length; i++) {
+      if (this.partyCharacters[i]) {
+        this.handleEquipItem(i, targetSlot, _slotIndex, equipItem);
+        return;
+      }
+    }
+
+    console.log('[MainScene] No character available for equipping');
+  }
+
+  // ============================================================================
   // Character Creation UI
   // ============================================================================
 
@@ -654,7 +863,7 @@ export class MainScene extends BaseScene {
 
     this.characterCreationUI = new CharacterCreationUI({
       onConfirm: (data) => {
-        this.createCharacter(data.name, data.stats);
+        this.createCharacter(data.name, data.stats, data.hairId, data.faceId);
         this.hideCharacterCreationUI();
       },
       onCancel: () => {
@@ -677,10 +886,12 @@ export class MainScene extends BaseScene {
     }
   }
 
-  private createCharacter(name: string, stats: Stats): void {
+  private createCharacter(name: string, stats: Stats, hairId: number, faceId: number): void {
     const baseHp = 50 + stats.str * 2;
     const baseMp = 10 + stats.int * 2;
-    const look = createDefaultLook();
+    const look = createLookWithChoices(hairId, faceId);
+
+    const equipment = createBeginnerEquipment();
 
     const newCharacter: PartyCharacter = {
       id: `char_${Date.now()}`,
@@ -692,7 +903,7 @@ export class MainScene extends BaseScene {
       combatStats: {
         accuracy: 10,
         evasion: 5,
-        criticalChance: 0.05,
+        criticalChance: 0,
         criticalDamage: 150,
         dropRate: 1.0,
       },
@@ -702,8 +913,8 @@ export class MainScene extends BaseScene {
       maxHp: baseHp,
       mp: baseMp,
       maxMp: baseMp,
-      weaponAttack: 15,
-      magicAttack: 15,
+      weaponAttack: BASE_WEAPON_ATTACK,
+      magicAttack: BASE_MAGIC_ATTACK,
       isActive: true,
       learnedSkills: [],
       equippedSkillSlots: [null, null, null, null, null, null],
@@ -712,15 +923,32 @@ export class MainScene extends BaseScene {
       mode: 'idle',
       targetMonsterId: null,
       look,
+      equipment,
     };
+
+    // Calculate stats from beginner equipment and sync look
+    applyEquipmentStats(newCharacter);
+    syncLookFromEquipment(newCharacter);
 
     this.partyCharacters.push(newCharacter);
     this.renderPartySlots();
 
-    // Load character sprite (priority animations first, then background load the rest)
-    this.loadCharacterSprite(newCharacter);
+    // Reload sprites for ALL characters (renderPartySlots destroys and recreates all slots)
+    this.reloadAllCharacterSprites();
 
     console.log(`[MainScene] Character created: [name]=[${newCharacter.name}] [stats]=[STR:${stats.str},DEX:${stats.dex},INT:${stats.int},LUK:${stats.luk}] [partySize]=[${this.partyCharacters.length}]`);
+  }
+
+  /**
+   * Reload sprites for all party characters
+   * Called after renderPartySlots() which destroys and recreates all slot UI
+   */
+  private reloadAllCharacterSprites(): void {
+    for (const character of this.partyCharacters) {
+      if (character) {
+        this.loadCharacterSprite(character);
+      }
+    }
   }
 
   /**
@@ -731,22 +959,55 @@ export class MainScene extends BaseScene {
     const slotIndex = this.partyCharacters.indexOf(character);
     if (slotIndex === -1) return;
 
-    // 1) Load priority animations (stand, walk, attack, alert)
-    await assetManager.preloadCharacterAnimations(character.look, PRIORITY_ANIMATIONS);
-
-    // Set initial idle sprite
-    const idleGif = await assetManager.getCharacterGif(character.look, getIdleAnimation());
+    // 1) Load idle animation FIRST and display immediately
     const slot = this.partySlots[slotIndex];
-    if (slot && idleGif) {
-      slot.setCharacterSprite(idleGif);
+    if (slot) {
+      const idleGif = await this.resolveIdleGif(character, assetManager);
+      if (idleGif) {
+        slot.setCharacterSprite(idleGif);
+      }
     }
 
-    // 2) Load remaining animations in background (non-blocking)
-    assetManager.preloadCharacterAnimations(character.look, SECONDARY_ANIMATIONS).catch(() => {});
+    // 2) Preload weapon-specific attack animations (only the ones this weapon uses)
+    const weaponId = getWeaponId(character);
+    const weaponAnims = getWeaponPreloadAnimations(weaponId);
+    if (weaponAnims.length > 0) {
+      assetManager.preloadCharacterAnimations(character.look, weaponAnims).catch(() => {});
+    }
+
+    // 3) Preload core idle/alert animations in background
+    assetManager.preloadCharacterAnimations(character.look, CORE_ANIMATIONS).catch(() => {});
   }
 
   /**
-   * Switch a party slot's displayed animation
+   * Resolve idle animation GIF with fallback chain
+   * stand2 (weapon idle) -> alert (combat ready) -> stand1 (unarmed idle)
+   */
+  private async resolveIdleGif(
+    character: PartyCharacter,
+    assetManager: AssetManager,
+  ): Promise<GifSource | null> {
+    const isArmed = hasWeapon(character);
+
+    if (isArmed) {
+      // Try stand2 first (weapon-holding idle)
+      const stand2Gif = await assetManager.getCharacterGif(character.look, 'stand2');
+      if (stand2Gif) return stand2Gif;
+
+      // Fallback: alert (combat-ready stance, usually shows weapon)
+      const alertGif = await assetManager.getCharacterGif(character.look, 'alert');
+      if (alertGif) return alertGif;
+
+      console.warn(`[MainScene] stand2/alert failed, falling back to stand1: [name]=[${character.name}]`);
+    }
+
+    // Final fallback: stand1 (unarmed idle)
+    return assetManager.getCharacterGif(character.look, 'stand1');
+  }
+
+  /**
+   * Switch a party slot's displayed animation with fallback support
+   * If the requested animation fails, falls back to idle animation
    */
   private async updateSlotAnimation(
     slotIndex: number,
@@ -756,7 +1017,13 @@ export class MainScene extends BaseScene {
     if (!character) return;
 
     const assetManager = AssetManager.getInstance();
-    const gifSource = await assetManager.getCharacterGif(character.look, animation);
+    let gifSource = await assetManager.getCharacterGif(character.look, animation);
+
+    // Fallback: if requested animation fails, resolve idle
+    if (!gifSource) {
+      console.warn(`[MainScene] Animation failed, using idle fallback: [animation]=[${animation}] [name]=[${character.name}]`);
+      gifSource = await this.resolveIdleGif(character, assetManager);
+    }
 
     const slot = this.partySlots[slotIndex];
     if (slot && gifSource) {
@@ -821,14 +1088,18 @@ export class MainScene extends BaseScene {
     const slotIndex = this.partyCharacters.findIndex((c) => c?.id === characterId);
     if (slotIndex === -1) return;
 
-    // Switch to attack animation
-    await this.updateSlotAnimation(slotIndex, getAttackAnimation());
+    const character = this.partyCharacters[slotIndex];
+    if (!character) return;
 
-    // After a short delay, switch back to stand
+    // Switch to attack animation (weapon type aware, randomly selected)
+    const attackAnim = getRandomAttackAnimation(getWeaponId(character));
+    await this.updateSlotAnimation(slotIndex, attackAnim);
+
+    // After a short delay, switch back to idle (weapon aware)
     setTimeout(() => {
-      const character = this.partyCharacters[slotIndex];
-      if (character && character.mode === 'combat') {
-        this.updateSlotAnimation(slotIndex, getIdleAnimation());
+      const currentChar = this.partyCharacters[slotIndex];
+      if (currentChar && currentChar.mode === 'combat') {
+        this.updateSlotAnimation(slotIndex, getIdleAnimation(hasWeapon(currentChar)));
       }
     }, 600);
   }
@@ -896,8 +1167,10 @@ export class MainScene extends BaseScene {
       partySlot.updateMode(newMode);
     }
 
-    // Switch animation based on mode
-    const animation = newMode === 'combat' ? getAttackAnimation() : getIdleAnimation();
+    // Switch animation based on mode (weapon-aware, random attack selection)
+    const animation = newMode === 'combat'
+      ? getRandomAttackAnimation(getWeaponId(character))
+      : getIdleAnimation(hasWeapon(character));
     this.updateSlotAnimation(slotIndex, animation);
   }
 
@@ -927,8 +1200,8 @@ export class MainScene extends BaseScene {
   // ============================================================================
 
   private playDividerEffect(): void {
-    const divider = this.partyLayer.getChildByName('partyFieldDivider') as Graphics;
-    const glowLine = this.partyLayer.getChildByName('partyFieldDividerGlow') as Graphics;
+    const divider = this.container.getChildByName('verticalDivider') as Graphics;
+    const glowLine = this.container.getChildByName('verticalDividerGlow') as Graphics;
     if (!divider) return;
 
     if (this.isDividerAnimating) return;
@@ -1026,6 +1299,7 @@ export class MainScene extends BaseScene {
     const activeParty = this.getActivePartyMembers();
     this.autoCombatSystem.setAllIdle(activeParty);
     this.renderPartySlots();
+    this.reloadAllCharacterSprites();
 
     this.monsterSystem.clearAll();
     this.dropSystem.clearAll();

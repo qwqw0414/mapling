@@ -75,7 +75,7 @@ export class MonsterSystem {
     this.fieldWidth = fieldWidth;
     this.fieldHeight = fieldHeight;
 
-    const fieldPadding = LAYOUT_CONFIG.FIELD_AREA.PADDING;
+    const fieldPadding = LAYOUT_CONFIG.LEFT_PANEL.PADDING;
     this.fieldMinX = fieldPadding + 50;
     this.fieldMaxX = this.fieldWidth - fieldPadding - 50;
   }

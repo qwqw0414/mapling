@@ -1,4 +1,11 @@
-import { Container, Graphics, Text } from 'pixi.js';
+import { Container, Graphics, Text, Sprite, Texture } from 'pixi.js';
+import { GifSprite } from 'pixi.js/gif';
+import { AssetManager } from '@/game/systems/AssetManager';
+import {
+  DEFAULT_HAIR_OPTIONS,
+  DEFAULT_FACE_OPTIONS,
+  createLookWithChoices,
+} from '@/data/characterLook';
 import type { Stats } from '@/types/character';
 
 // ============================================================================
@@ -8,6 +15,8 @@ import type { Stats } from '@/types/character';
 interface CharacterCreationData {
   name: string;
   stats: Stats;
+  hairId: number;
+  faceId: number;
 }
 
 interface CharacterCreationOptions {
@@ -19,7 +28,6 @@ interface CharacterCreationOptions {
 // Constants
 // ============================================================================
 
-/** All bonus points go to STR (will be reset on job advancement) */
 const DEFAULT_STATS: Stats = {
   str: 34,
   dex: 4,
@@ -27,30 +35,40 @@ const DEFAULT_STATS: Stats = {
   luk: 4,
 };
 
+const PANEL_WIDTH = 420;
+const PANEL_HEIGHT = 380;
+const PREVIEW_SIZE = 100;
+
 // ============================================================================
 // CharacterCreationUI Component
 // ============================================================================
 
 /**
- * Character creation UI with name input only.
+ * Character creation UI with name input, hair/face selection, and preview.
  * Stats are auto-assigned (all 30 bonus to STR).
- * Stats will be reset upon job advancement.
  */
 export class CharacterCreationUI extends Container {
   private readonly onConfirmCallback: (data: CharacterCreationData) => void;
   private readonly onCancelCallback: () => void;
 
-  private readonly panelWidth = 400;
-  private readonly panelHeight = 220;
+  private readonly panelWidth = PANEL_WIDTH;
+  private readonly panelHeight = PANEL_HEIGHT;
 
   // Keyboard handler reference for cleanup
   private keydownHandler: ((e: KeyboardEvent) => void) | null = null;
 
   // Character data
   private characterName: string = '';
+  private hairIndex: number = 0;
+  private faceIndex: number = 0;
 
   // UI Elements
   private nameInputText: Text | null = null;
+  private hairLabelText: Text | null = null;
+  private faceLabelText: Text | null = null;
+  private previewContainer: Container | null = null;
+  private previewSprite: GifSprite | Sprite | null = null;
+  private isLoadingPreview = false;
 
   // Input state
   private isInputActive = false;
@@ -61,8 +79,13 @@ export class CharacterCreationUI extends Container {
     this.onConfirmCallback = options.onConfirm;
     this.onCancelCallback = options.onCancel;
 
+    // Random initial selection
+    this.hairIndex = Math.floor(Math.random() * DEFAULT_HAIR_OPTIONS.length);
+    this.faceIndex = Math.floor(Math.random() * DEFAULT_FACE_OPTIONS.length);
+
     this.createUI();
     this.setupKeyboardInput();
+    this.loadPreview();
   }
 
   // ============================================================================
@@ -91,7 +114,7 @@ export class CharacterCreationUI extends Container {
     const title = new Text({
       text: '캐릭터 생성',
       style: {
-        fontSize: 24,
+        fontSize: 22,
         fill: 0xFFFFFF,
         fontFamily: 'Arial',
         fontWeight: 'bold',
@@ -99,36 +122,302 @@ export class CharacterCreationUI extends Container {
     });
     title.anchor.set(0.5, 0);
     title.x = this.panelWidth / 2;
-    title.y = 20;
+    title.y = 18;
     this.addChild(title);
 
-    // Name input section
-    this.createNameInput(75);
+    let y = 55;
+
+    // Name input
+    this.createNameInput(y);
+    y += 50;
+
+    // Preview + selectors row
+    this.createPreviewAndSelectors(y);
+    y += PREVIEW_SIZE + 30;
 
     // Info text
     const infoText = new Text({
       text: '초기 능력치는 자동 배분됩니다 (전직 시 초기화)',
       style: {
-        fontSize: 12,
+        fontSize: 11,
         fill: 0x888888,
         fontFamily: 'Arial',
       },
     });
     infoText.anchor.set(0.5, 0);
     infoText.x = this.panelWidth / 2;
-    infoText.y = 125;
+    infoText.y = y;
     this.addChild(infoText);
 
     // Buttons
     this.createButtons(this.panelHeight - 60);
   }
 
-  private createNameInput(startY: number): void {
+  // ============================================================================
+  // Preview + Selectors
+  // ============================================================================
+
+  private createPreviewAndSelectors(startY: number): void {
+    const previewX = 30;
+    const selectorX = previewX + PREVIEW_SIZE + 20;
+
+    // Preview area
+    this.createPreviewArea(previewX, startY);
+
+    // Hair selector
+    const hairY = startY + 15;
+    this.createSelector(
+      '머리',
+      selectorX,
+      hairY,
+      () => this.changeHair(-1),
+      () => this.changeHair(1),
+    );
+    this.hairLabelText = this.createSelectorValue(selectorX, hairY);
+    this.updateHairLabel();
+
+    // Face selector
+    const faceY = hairY + 50;
+    this.createSelector(
+      '얼굴',
+      selectorX,
+      faceY,
+      () => this.changeFace(-1),
+      () => this.changeFace(1),
+    );
+    this.faceLabelText = this.createSelectorValue(selectorX, faceY);
+    this.updateFaceLabel();
+  }
+
+  private createPreviewArea(x: number, y: number): void {
+    // Preview background
+    const bg = new Graphics();
+    bg.roundRect(x, y, PREVIEW_SIZE, PREVIEW_SIZE, 6);
+    bg.fill({ color: 0x222233 });
+    bg.stroke({ color: 0x444466, width: 1 });
+    this.addChild(bg);
+
+    // Preview container (for character sprite)
+    this.previewContainer = new Container();
+    this.previewContainer.x = x;
+    this.previewContainer.y = y;
+    this.addChild(this.previewContainer);
+
+    // Loading text
+    const loadingText = new Text({
+      text: '...',
+      style: { fontSize: 12, fill: 0x666666, fontFamily: 'Arial' },
+    });
+    loadingText.anchor.set(0.5);
+    loadingText.x = PREVIEW_SIZE / 2;
+    loadingText.y = PREVIEW_SIZE / 2;
+    loadingText.label = 'loadingText';
+    this.previewContainer.addChild(loadingText);
+  }
+
+  private createSelector(
+    label: string,
+    x: number,
+    y: number,
+    onPrev: () => void,
+    onNext: () => void,
+  ): void {
     // Label
+    const labelText = new Text({
+      text: label,
+      style: {
+        fontSize: 13,
+        fill: 0xCCCCCC,
+        fontFamily: 'Arial',
+        fontWeight: 'bold',
+      },
+    });
+    labelText.x = x;
+    labelText.y = y;
+    this.addChild(labelText);
+
+    const arrowY = y + 22;
+    const arrowWidth = 24;
+    const arrowHeight = 24;
+
+    // Left arrow
+    const leftArrow = this.createArrowButton('<', arrowWidth, arrowHeight);
+    leftArrow.x = x;
+    leftArrow.y = arrowY;
+    leftArrow.on('pointerdown', (e) => {
+      e.stopPropagation();
+      onPrev();
+    });
+    this.addChild(leftArrow);
+
+    // Right arrow
+    const rightArrow = this.createArrowButton('>', arrowWidth, arrowHeight);
+    rightArrow.x = x + 200;
+    rightArrow.y = arrowY;
+    rightArrow.on('pointerdown', (e) => {
+      e.stopPropagation();
+      onNext();
+    });
+    this.addChild(rightArrow);
+  }
+
+  private createSelectorValue(x: number, y: number): Text {
+    const valueText = new Text({
+      text: '',
+      style: {
+        fontSize: 12,
+        fill: 0xFFFFFF,
+        fontFamily: 'Arial',
+      },
+    });
+    valueText.anchor.set(0.5, 0);
+    valueText.x = x + 112 + 12;
+    valueText.y = y + 25;
+    this.addChild(valueText);
+    return valueText;
+  }
+
+  private createArrowButton(symbol: string, width: number, height: number): Container {
+    const btn = new Container();
+
+    const bg = new Graphics();
+    bg.roundRect(0, 0, width, height, 4);
+    bg.fill({ color: 0x444444 });
+    btn.addChild(bg);
+
+    const text = new Text({
+      text: symbol,
+      style: {
+        fontSize: 14,
+        fill: 0xFFFFFF,
+        fontFamily: 'Arial',
+        fontWeight: 'bold',
+      },
+    });
+    text.anchor.set(0.5);
+    text.x = width / 2;
+    text.y = height / 2;
+    btn.addChild(text);
+
+    btn.eventMode = 'static';
+    btn.cursor = 'pointer';
+
+    btn.on('pointerover', () => {
+      bg.clear();
+      bg.roundRect(0, 0, width, height, 4);
+      bg.fill({ color: 0x666666 });
+    });
+    btn.on('pointerout', () => {
+      bg.clear();
+      bg.roundRect(0, 0, width, height, 4);
+      bg.fill({ color: 0x444444 });
+    });
+
+    return btn;
+  }
+
+  // ============================================================================
+  // Hair / Face Selection
+  // ============================================================================
+
+  private changeHair(delta: number): void {
+    const len = DEFAULT_HAIR_OPTIONS.length;
+    this.hairIndex = (this.hairIndex + delta + len) % len;
+    this.updateHairLabel();
+    this.loadPreview();
+  }
+
+  private changeFace(delta: number): void {
+    const len = DEFAULT_FACE_OPTIONS.length;
+    this.faceIndex = (this.faceIndex + delta + len) % len;
+    this.updateFaceLabel();
+    this.loadPreview();
+  }
+
+  private updateHairLabel(): void {
+    if (this.hairLabelText) {
+      const hair = DEFAULT_HAIR_OPTIONS[this.hairIndex];
+      this.hairLabelText.text = hair.nameKr;
+    }
+  }
+
+  private updateFaceLabel(): void {
+    if (this.faceLabelText) {
+      const face = DEFAULT_FACE_OPTIONS[this.faceIndex];
+      this.faceLabelText.text = face.nameKr;
+    }
+  }
+
+  // ============================================================================
+  // Preview Loading
+  // ============================================================================
+
+  private async loadPreview(): Promise<void> {
+    if (!this.previewContainer || this.isLoadingPreview) return;
+
+    this.isLoadingPreview = true;
+
+    const hairId = DEFAULT_HAIR_OPTIONS[this.hairIndex].id;
+    const faceId = DEFAULT_FACE_OPTIONS[this.faceIndex].id;
+    const look = createLookWithChoices(hairId, faceId);
+
+    // Capture current selection to detect stale loads
+    const expectedHair = this.hairIndex;
+    const expectedFace = this.faceIndex;
+
+    try {
+      const assetManager = AssetManager.getInstance();
+      const gifSource = await assetManager.getCharacterGif(look, 'stand1');
+
+      // Stale check: selection changed during load
+      if (expectedHair !== this.hairIndex || expectedFace !== this.faceIndex) {
+        this.isLoadingPreview = false;
+        this.loadPreview();
+        return;
+      }
+
+      // Remove old preview sprite
+      if (this.previewSprite) {
+        this.previewContainer.removeChild(this.previewSprite);
+        this.previewSprite.destroy();
+        this.previewSprite = null;
+      }
+
+      // Remove loading text
+      const loadingText = this.previewContainer.getChildByLabel('loadingText');
+      if (loadingText) {
+        this.previewContainer.removeChild(loadingText);
+        loadingText.destroy();
+      }
+
+      if (gifSource) {
+        const sprite = new GifSprite({
+          source: gifSource,
+          autoPlay: true,
+          loop: true,
+        });
+        sprite.anchor.set(0.5, 1);
+        sprite.x = PREVIEW_SIZE / 2;
+        sprite.y = PREVIEW_SIZE - 5;
+        this.previewSprite = sprite;
+        this.previewContainer.addChild(sprite);
+      }
+    } catch (err) {
+      console.warn('[CharacterCreationUI] Preview load failed:', err);
+    }
+
+    this.isLoadingPreview = false;
+  }
+
+  // ============================================================================
+  // Name Input
+  // ============================================================================
+
+  private createNameInput(startY: number): void {
     const label = new Text({
       text: '이름:',
       style: {
-        fontSize: 16,
+        fontSize: 15,
         fill: 0xCCCCCC,
         fontFamily: 'Arial',
       },
@@ -137,19 +426,17 @@ export class CharacterCreationUI extends Container {
     label.y = startY;
     this.addChild(label);
 
-    // Input box background
     const inputBg = new Graphics();
-    inputBg.roundRect(100, startY - 5, 270, 35, 5);
+    inputBg.roundRect(100, startY - 5, 290, 35, 5);
     inputBg.fill({ color: 0x2a2a2a });
     inputBg.stroke({ color: 0x666666, width: 2 });
     inputBg.label = 'inputBg';
     this.addChild(inputBg);
 
-    // Input text
     this.nameInputText = new Text({
       text: '|',
       style: {
-        fontSize: 16,
+        fontSize: 15,
         fill: 0xFFFFFF,
         fontFamily: 'Arial',
       },
@@ -158,23 +445,72 @@ export class CharacterCreationUI extends Container {
     this.nameInputText.y = startY + 3;
     this.addChild(this.nameInputText);
 
-    // Make input clickable
     inputBg.eventMode = 'static';
     inputBg.cursor = 'text';
     inputBg.on('pointerdown', () => {
       this.activateInput();
     });
 
-    // Auto-activate input on creation
     this.activateInput();
   }
+
+  private activateInput(): void {
+    this.isInputActive = true;
+    this.updateNameDisplay();
+  }
+
+  private deactivateInput(): void {
+    this.isInputActive = false;
+    this.updateNameDisplay();
+  }
+
+  private setupKeyboardInput(): void {
+    const handleKeyDown = (e: KeyboardEvent): void => {
+      if (!this.isInputActive) return;
+
+      if (e.key === 'Escape') {
+        this.deactivateInput();
+        return;
+      }
+
+      if (e.key === 'Enter') {
+        this.deactivateInput();
+        this.handleConfirm();
+        return;
+      }
+
+      if (e.key === 'Backspace') {
+        this.characterName = this.characterName.slice(0, -1);
+        this.updateNameDisplay();
+        return;
+      }
+
+      if (e.key.length === 1 && this.characterName.length < 12) {
+        this.characterName += e.key;
+        this.updateNameDisplay();
+      }
+    };
+
+    this.keydownHandler = handleKeyDown;
+    window.addEventListener('keydown', handleKeyDown);
+  }
+
+  private updateNameDisplay(): void {
+    if (this.nameInputText) {
+      const displayText = this.characterName + (this.isInputActive ? '|' : '');
+      this.nameInputText.text = displayText || (this.isInputActive ? '|' : '');
+    }
+  }
+
+  // ============================================================================
+  // Buttons
+  // ============================================================================
 
   private createButtons(y: number): void {
     const buttonWidth = 120;
     const buttonHeight = 40;
     const gap = 20;
 
-    // Cancel button
     const cancelBtn = this.createButton('취소', buttonWidth, buttonHeight, 0x666666);
     cancelBtn.x = (this.panelWidth - buttonWidth * 2 - gap) / 2;
     cancelBtn.y = y;
@@ -183,7 +519,6 @@ export class CharacterCreationUI extends Container {
     });
     this.addChild(cancelBtn);
 
-    // Confirm button
     const confirmButton = this.createButton('생성', buttonWidth, buttonHeight, 0x4488ff);
     confirmButton.x = (this.panelWidth - buttonWidth * 2 - gap) / 2 + buttonWidth + gap;
     confirmButton.y = y;
@@ -237,59 +572,6 @@ export class CharacterCreationUI extends Container {
   }
 
   // ============================================================================
-  // Name Input
-  // ============================================================================
-
-  private activateInput(): void {
-    this.isInputActive = true;
-    this.updateNameDisplay();
-  }
-
-  private deactivateInput(): void {
-    this.isInputActive = false;
-    this.updateNameDisplay();
-  }
-
-  private setupKeyboardInput(): void {
-    const handleKeyDown = (e: KeyboardEvent): void => {
-      if (!this.isInputActive) return;
-
-      if (e.key === 'Escape') {
-        this.deactivateInput();
-        return;
-      }
-
-      if (e.key === 'Enter') {
-        this.deactivateInput();
-        this.handleConfirm();
-        return;
-      }
-
-      if (e.key === 'Backspace') {
-        this.characterName = this.characterName.slice(0, -1);
-        this.updateNameDisplay();
-        return;
-      }
-
-      // Only allow alphanumeric and Korean characters
-      if (e.key.length === 1 && this.characterName.length < 12) {
-        this.characterName += e.key;
-        this.updateNameDisplay();
-      }
-    };
-
-    this.keydownHandler = handleKeyDown;
-    window.addEventListener('keydown', handleKeyDown);
-  }
-
-  private updateNameDisplay(): void {
-    if (this.nameInputText) {
-      const displayText = this.characterName + (this.isInputActive ? '|' : '');
-      this.nameInputText.text = displayText || (this.isInputActive ? '|' : '');
-    }
-  }
-
-  // ============================================================================
   // Confirmation
   // ============================================================================
 
@@ -299,13 +581,18 @@ export class CharacterCreationUI extends Container {
       return;
     }
 
+    const hairId = DEFAULT_HAIR_OPTIONS[this.hairIndex].id;
+    const faceId = DEFAULT_FACE_OPTIONS[this.faceIndex].id;
+
     const data: CharacterCreationData = {
       name: this.characterName.trim(),
       stats: { ...DEFAULT_STATS },
+      hairId,
+      faceId,
     };
 
     console.log(
-      `[CharacterCreationUI] Creating character: [name]=[${data.name}] [stats]=[STR:${data.stats.str},DEX:${data.stats.dex},INT:${data.stats.int},LUK:${data.stats.luk}]`,
+      `[CharacterCreationUI] Creating character: [name]=[${data.name}] [hairId]=[${data.hairId}] [faceId]=[${data.faceId}]`,
     );
 
     this.onConfirmCallback(data);
@@ -315,9 +602,6 @@ export class CharacterCreationUI extends Container {
   // Position
   // ============================================================================
 
-  /**
-   * Center the UI in the given dimensions
-   */
   public centerIn(width: number, height: number): void {
     this.x = (width - this.panelWidth) / 2;
     this.y = (height - this.panelHeight) / 2;
@@ -331,6 +615,11 @@ export class CharacterCreationUI extends Container {
     if (this.keydownHandler) {
       window.removeEventListener('keydown', this.keydownHandler);
       this.keydownHandler = null;
+    }
+
+    if (this.previewSprite) {
+      this.previewSprite.destroy();
+      this.previewSprite = null;
     }
 
     super.destroy({ children: true });

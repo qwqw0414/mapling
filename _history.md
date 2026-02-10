@@ -1,5 +1,14 @@
 # Mapling - 개발 히스토리
 
+[2026-02-10] [FEAT] 무기별 애니메이션 데이터 시스템: weaponAnimations.ts에 ID prefix별 idle/attack 정의, 공격 시 랜덤 모션 선택(swingO1~3/T1~3/P1~2/shoot1~2 등)
+[2026-02-10] [FIX] 무기 외형 미반영: stand1(무기없음)/stand2(무기있음) 구분, 무기 장착시 stand2 사용. 양손검→swingT1, 원거리→shoot1 등 무기유형별 공격 애니메이션 분기
+[2026-02-10] [FEAT] 장비 스탯 연동: 장착/해제 시 weaponAttack/magicAttack 자동 계산, look.equipItemIds 동기화→스프라이트 리렌더, 장비뷰 아이콘/툴팁 표시
+[2026-02-10] [FIX] 장비 장착 안되는 버그: 슬롯의 pointerupoutside가 InventoryUI보다 먼저 실행→상태 리셋, 해당 이벤트 제거로 수정. 더블클릭 장착 추가, getEquipSlotAtGlobal 좌표변환 개선
+[2026-02-10] [FEAT] 장비 장착/해제 시스템: 장비뷰 클릭→인벤토리 해제, 인벤토리 D&D→장비뷰 장착, 슬롯타입 검증, 초보자 기본장비(런닝셔츠/반바지/운동화/목검)
+[2026-02-10] [FEAT] 장비 뷰(3x3 Grid): PartySlot EQUIP 버튼→회전문 애니메이션, 9슬롯 그리드 배치, 등급별 테두리 색상, 전투모드 비활성
+[2026-02-10] [FEAT] 캐릭터 생성 시 머리/얼굴 선택: 좌우 화살표로 6종씩 선택, stand1 미리보기, createLookWithChoices 함수 추가
+[2026-02-10] [FEAT] 스탯 자동배분+스탯뷰: 레벨업 시 주스탯+3/보조+2 자동할당, 파티슬롯 STAT 버튼→회전문 애니메이션 스탯화면 전환
+[2026-02-10] [FEAT] 레이아웃 전면 재개편: 상하4단→좌우7:3분할, 좌(필드+맵버튼/로그 오버레이)+우(인벤토리+2x2파티), 드롭방향 우측전환
 [2026-02-10] [FEAT] Electron 데스크톱 앱 지원: vite-plugin-electron 연동, 메인/프리로드 프로세스, electron-builder 패키징 설정(mac/win/linux)
 [2026-02-10] [CONFIG] 화면 1280x720 고정: Electron 창 리사이징 비활성화, 반응형 레이아웃 코드 전면 제거(updateMapSize/onResize/resize 등)
 [2026-02-06] 캐릭터 스프라이트: maplestory.io Character API 연동, 32종 모션 GIF(stand/walk/attack/stab/shoot 등), L1/L2 캐싱, 외형(CharacterLook) 시스템

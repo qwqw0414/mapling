@@ -1,6 +1,7 @@
 import type { CharacterState, CharacterMode } from './character';
 import type { LearnedSkill } from './skill';
 import type { CharacterLook } from '@/data/characterLook';
+import type { Equipment } from './item';
 
 // ============================================================================
 // Party Types
@@ -24,6 +25,8 @@ export interface PartyCharacter extends CharacterState {
   targetMonsterId: string | null;
   /** Visual appearance data (skin, hair, face, equipment) */
   look: CharacterLook;
+  /** Currently equipped items per slot */
+  equipment: Equipment;
 }
 
 /**

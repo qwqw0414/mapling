@@ -141,8 +141,15 @@ export class LevelSystem {
     character.maxMp += mpGained;
     character.hp = character.maxHp;
     character.mp = character.maxMp;
-    character.statPoints += jobData.statPointsPerLevel;
     character.skillPoints += jobData.skillPointsPerLevel;
+
+    // Auto-allocate stat points: primary +3, secondary +2
+    const statPointsPerLevel = jobData.statPointsPerLevel;
+    const primaryAlloc = Math.min(3, statPointsPerLevel);
+    const secondaryAlloc = Math.min(2, statPointsPerLevel - primaryAlloc);
+    character.stats[jobData.primaryStat] += primaryAlloc;
+    character.stats[jobData.secondaryStat] += secondaryAlloc;
+    character.statPoints += statPointsPerLevel;
 
     return {
       hpGained,

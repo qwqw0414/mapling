@@ -146,38 +146,47 @@ export const AUDIO_CONFIG = {
 } as const;
 
 // ============================================================================
-// Main Layout Configuration
+// Main Layout Configuration (좌우 7:3 분할)
 // ============================================================================
 
 export const LAYOUT_CONFIG = {
-  // 헤더 영역 (맵 정보, 메소)
-  HEADER: {
-    HEIGHT: 50,
+  // 좌측 패널 - 사냥터 필드 (70%)
+  LEFT_PANEL: {
+    WIDTH_RATIO: 0.70,
     PADDING: 15,
   },
 
-  // 캐릭터 슬롯 영역
-  PARTY_AREA: {
-    HEIGHT_RATIO: 0.30, // 전체 높이의 30%
+  // 우측 패널 - 인벤토리 + 파티 (30%)
+  RIGHT_PANEL: {
+    WIDTH_RATIO: 0.30,
     PADDING: 10,
-    SLOT_GAP: 15,
-    MAX_SLOTS: 4,
-    INVENTORY_WIDTH: 220, // 인벤토리 고정 너비
+    // 인벤토리 영역 (우측 상단)
+    INVENTORY_HEIGHT_RATIO: 0.35,
+    // 파티 영역 (우측 하단)
+    PARTY_HEIGHT_RATIO: 0.65,
   },
 
-  // 사냥 필드 영역
-  FIELD_AREA: {
-    HEIGHT_RATIO: 0.55, // 전체 높이의 55%
-    PADDING: 10,
+  // 맵이동 버튼 (필드 좌측 상단 오버레이)
+  MAP_BUTTON: {
+    PADDING: 15,
   },
 
-  // 로그 영역
-  LOG_AREA: {
-    HEIGHT_RATIO: 0.15, // 전체 높이의 15%
+  // 로그 (필드 우측 상단 오버레이)
+  LOG: {
     PADDING: 10,
-    MAX_ENTRIES: 10,
+    MAX_WIDTH: 300,
+    MAX_ENTRIES: 8,
     FADE_START_MS: 3000,
     FADE_DURATION_MS: 2000,
+  },
+
+  // 파티 슬롯 (2x2 그리드)
+  PARTY_AREA: {
+    PADDING: 8,
+    SLOT_GAP: 8,
+    MAX_SLOTS: 4,
+    GRID_COLUMNS: 2,
+    GRID_ROWS: 2,
   },
 } as const;
 

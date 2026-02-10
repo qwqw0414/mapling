@@ -15,6 +15,8 @@ interface InventoryUIOptions {
   onTabChange?: (tab: InventoryTab) => void;
   onSlotClick?: (slotIndex: number, item: InventorySlot | null) => void;
   onItemSwap?: (category: ItemCategory, fromIndex: number, toIndex: number) => void;
+  onDragOutside?: (slotIndex: number, item: InventorySlot, globalX: number, globalY: number) => void;
+  onDoubleClick?: (slotIndex: number, item: InventorySlot) => void;
 }
 
 interface TabButton {
@@ -65,10 +67,17 @@ export class InventoryUI extends Container {
   private dragGhost: Container | null = null;
   private dragStartPos: { x: number; y: number } = { x: 0, y: 0 };
 
+  // Double-click detection
+  private lastClickTime: number = 0;
+  private lastClickIndex: number = -1;
+  private static readonly DOUBLE_CLICK_THRESHOLD_MS = 350;
+
   // Callbacks
   private readonly onTabChangeCallback?: (tab: InventoryTab) => void;
   private readonly onSlotClickCallback?: (slotIndex: number, item: InventorySlot | null) => void;
   private readonly onItemSwapCallback?: (category: ItemCategory, fromIndex: number, toIndex: number) => void;
+  private readonly onDragOutsideCallback?: (slotIndex: number, item: InventorySlot, globalX: number, globalY: number) => void;
+  private readonly onDoubleClickCallback?: (slotIndex: number, item: InventorySlot) => void;
 
   constructor(options: InventoryUIOptions) {
     super();
@@ -78,6 +87,8 @@ export class InventoryUI extends Container {
     this.onTabChangeCallback = options.onTabChange;
     this.onSlotClickCallback = options.onSlotClick;
     this.onItemSwapCallback = options.onItemSwap;
+    this.onDragOutsideCallback = options.onDragOutside;
+    this.onDoubleClickCallback = options.onDoubleClick;
 
     // Background
     this.background = new Graphics();
@@ -359,7 +370,6 @@ export class InventoryUI extends Container {
       slot.cursor = 'pointer';
       slot.on('pointerdown', (e: FederatedPointerEvent) => this.onSlotPointerDown(i, e));
       slot.on('pointerup', () => this.onSlotPointerUp(i));
-      slot.on('pointerupoutside', () => this.onDragEnd());
       slot.on('pointerover', (e: FederatedPointerEvent) => this.onSlotPointerOver(i, e));
       slot.on('pointerout', () => this.onSlotPointerOut());
       slot.on('pointermove', (e: FederatedPointerEvent) => this.onSlotPointerMove(e));
@@ -499,15 +509,40 @@ export class InventoryUI extends Container {
     if (this.isDragging && this.dragStartIndex !== -1) {
       const dropIndex = this.getSlotIndexAtPosition(e.global.x, e.global.y);
       if (dropIndex !== -1 && dropIndex !== this.dragStartIndex) {
+        // Drop inside inventory -> swap
         if (this.onItemSwapCallback) {
           this.onItemSwapCallback(this.currentTab, this.dragStartIndex, dropIndex);
         }
+      } else if (dropIndex === -1) {
+        // Drop outside inventory -> notify parent for cross-component drop
+        const dragItem = this.items[this.dragStartIndex];
+        if (dragItem && this.onDragOutsideCallback) {
+          this.onDragOutsideCallback(this.dragStartIndex, dragItem, e.global.x, e.global.y);
+        }
       }
     } else if (!this.isDragging && this.dragStartIndex !== -1) {
-      // Regular click
-      const item = this.items[this.dragStartIndex] ?? null;
-      if (this.onSlotClickCallback) {
-        this.onSlotClickCallback(this.dragStartIndex, item);
+      // Regular click or double-click
+      const now = Date.now();
+      const clickedIndex = this.dragStartIndex;
+      const clickedItem = this.items[clickedIndex] ?? null;
+
+      if (
+        clickedItem &&
+        this.lastClickIndex === clickedIndex &&
+        now - this.lastClickTime < InventoryUI.DOUBLE_CLICK_THRESHOLD_MS &&
+        this.onDoubleClickCallback
+      ) {
+        // Double-click detected
+        this.onDoubleClickCallback(clickedIndex, clickedItem);
+        this.lastClickTime = 0;
+        this.lastClickIndex = -1;
+      } else {
+        // Single click
+        if (this.onSlotClickCallback) {
+          this.onSlotClickCallback(clickedIndex, clickedItem);
+        }
+        this.lastClickTime = now;
+        this.lastClickIndex = clickedIndex;
       }
     }
 
@@ -703,7 +738,6 @@ export class InventoryUI extends Container {
     if (!slot) return;
 
     const slotSize = INVENTORY_CONFIG.SLOT_SIZE;
-    const item = this.items[index] ?? null;
 
     slot.clear();
     slot.roundRect(0, 0, slotSize, slotSize, 2);

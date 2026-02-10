@@ -8,7 +8,7 @@ import { getItemById } from '@/data/items';
 
 export class DropSystem {
   private fieldLayer: Container;
-  private partyLayer: Container;
+  private _rightPanel: Container;
   private fieldWidth: number;
   private fieldHeight: number;
   private itemPickupSound: HTMLAudioElement | null = null;
@@ -24,12 +24,12 @@ export class DropSystem {
 
   constructor(
     fieldLayer: Container,
-    partyLayer: Container,
+    rightPanel: Container,
     fieldWidth: number,
     fieldHeight: number
   ) {
     this.fieldLayer = fieldLayer;
-    this.partyLayer = partyLayer;
+    this._rightPanel = rightPanel;
     this.fieldWidth = fieldWidth;
     this.fieldHeight = fieldHeight;
   }
@@ -151,8 +151,9 @@ export class DropSystem {
   }
 
   private flyToPartyArea(container: Container, startX: number, startY: number): void {
-    const targetX = this.fieldWidth / 2;
-    const targetY = -5;
+    // 오른쪽 수직 구분선 방향으로 이동
+    const targetX = this.fieldWidth + 5;
+    const targetY = this.fieldHeight / 2;
 
     const duration = 600;
     const startTime = Date.now();

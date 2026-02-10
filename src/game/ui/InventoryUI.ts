@@ -33,8 +33,8 @@ interface TabButton {
  * Displays items in a scrollable grid with meso counter
  */
 export class InventoryUI extends Container {
-  private uiWidth: number;
-  private uiHeight: number;
+  private readonly uiWidth: number;
+  private readonly uiHeight: number;
 
   // UI Elements
   private readonly background: Graphics;
@@ -161,21 +161,6 @@ export class InventoryUI extends Container {
    */
   public getTab(): InventoryTab {
     return this.currentTab;
-  }
-
-  /**
-   * Resize the inventory UI
-   */
-  public resize(width: number, height: number): void {
-    this.uiWidth = width;
-    this.uiHeight = height;
-
-    this.drawBackground();
-    this.layoutTabs();
-    this.updateMesoPosition();
-    this.createGridSlots();
-    this.updateGridContent();
-    this.updateScrollBounds();
   }
 
   // ============================================================================

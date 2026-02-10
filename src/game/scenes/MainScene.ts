@@ -3,6 +3,7 @@ import { GifSource } from 'pixi.js/gif';
 import { BaseScene } from './BaseScene';
 import {
   MAP_CONFIG,
+  GAME_CONFIG,
   LAYOUT_CONFIG,
   SLOT_CONFIG,
 } from '@/constants/config';
@@ -215,24 +216,6 @@ export class MainScene extends BaseScene {
     }
   }
 
-  private updateDebugBorders(): void {
-    const updates = [
-      { layer: this.headerLayer, layout: this.layout.header },
-      { layer: this.partyLayer, layout: this.layout.party },
-      { layer: this.fieldLayer, layout: this.layout.field },
-      { layer: this.logLayer, layout: this.layout.log },
-    ];
-
-    for (const { layer, layout } of updates) {
-      const border = layer.getChildByName('debugBorder') as Graphics;
-      if (border) {
-        border.clear();
-        border.rect(0, 0, layout.width, layout.height);
-        border.stroke({ color: 0x333333, width: 1 });
-      }
-    }
-  }
-
   // ============================================================================
   // System Initialization
   // ============================================================================
@@ -358,8 +341,8 @@ export class MainScene extends BaseScene {
     const availableHeight = this.layout.partySlots.height - padding * 2;
     const availableWidth = this.layout.partySlots.width;
 
-    const slotWidth = SLOT_CONFIG.MIN_WIDTH;
-    const slotHeight = Math.max(SLOT_CONFIG.MIN_HEIGHT, availableHeight);
+    const slotWidth = SLOT_CONFIG.WIDTH;
+    const slotHeight = Math.max(SLOT_CONFIG.HEIGHT, availableHeight);
     const slotGap = LAYOUT_CONFIG.PARTY_AREA.SLOT_GAP;
 
     if (this.partyCharacters.length === 0) {
@@ -525,33 +508,6 @@ export class MainScene extends BaseScene {
     glowLine.alpha = 0.15;
   }
 
-  private updatePartyFieldDivider(): void {
-    const divider = this.partyLayer.getChildByName('partyFieldDivider') as Graphics;
-    const glowLine = this.partyLayer.getChildByName('partyFieldDividerGlow') as Graphics;
-
-    if (divider) {
-      const lineY = this.layout.party.height;
-      const padding = 30;
-      const currentAlpha = divider.alpha;
-
-      divider.clear();
-      divider.moveTo(padding, lineY);
-      divider.lineTo(this.layout.party.width - padding, lineY);
-      divider.stroke({ color: 0x4488ff, width: 2 });
-      divider.alpha = currentAlpha;
-    }
-
-    if (glowLine) {
-      const lineY = this.layout.party.height;
-      const padding = 30;
-
-      glowLine.clear();
-      glowLine.moveTo(padding, lineY);
-      glowLine.lineTo(this.layout.party.width - padding, lineY);
-      glowLine.stroke({ color: 0x4488ff, width: 6, alpha: 0.2 });
-    }
-  }
-
   private createPartySlot(index: number, width: number, height: number): PartySlot {
     return new PartySlot({
       width,
@@ -706,7 +662,7 @@ export class MainScene extends BaseScene {
       },
     });
 
-    this.characterCreationUI.centerIn(MAP_CONFIG.WIDTH, MAP_CONFIG.HEIGHT);
+    this.characterCreationUI.centerIn(GAME_CONFIG.WIDTH, GAME_CONFIG.HEIGHT);
     this.container.addChild(this.characterCreationUI);
 
     console.log('[MainScene] Character creation UI opened');
@@ -1182,44 +1138,6 @@ export class MainScene extends BaseScene {
       URL.revokeObjectURL(url);
     }
     this.blobUrls = [];
-  }
-
-  // ============================================================================
-  // Resize Handler
-  // ============================================================================
-
-  onResize(_width: number, _height: number): void {
-    this.calculateLayout();
-
-    this.headerLayer.y = this.layout.header.y;
-    this.partyLayer.y = this.layout.party.y;
-    this.fieldLayer.y = this.layout.field.y;
-    this.logLayer.y = this.layout.log.y;
-
-    this.updateDebugBorders();
-
-    // Update party area sub-containers
-    this.partySlotsContainer.x = this.layout.partySlots.x;
-    this.inventoryContainer.x = this.layout.inventory.x;
-
-    this.updateAddCharacterButton();
-
-    this.renderPartySlots();
-    this.updatePartyFieldDivider();
-
-    // Resize inventory UI
-    if (this.inventoryUI) {
-      const padding = LAYOUT_CONFIG.PARTY_AREA.PADDING;
-      this.inventoryUI.resize(
-        this.layout.inventory.width - padding,
-        this.layout.inventory.height - padding * 2
-      );
-    }
-
-    this.fieldView.updateFieldDimensions(this.layout.field.width, this.layout.field.height);
-    this.monsterSystem.setFieldDimensions(this.layout.field.width, this.layout.field.height);
-
-    console.log(`[MainScene] Resized to ${this.layout.field.width}x${this.layout.field.height}`);
   }
 
   // ============================================================================

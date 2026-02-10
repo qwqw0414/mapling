@@ -1,4 +1,5 @@
 import { Container, Graphics, Text } from 'pixi.js';
+import { GAME_CONFIG } from '@/constants/config';
 import { getFieldMaps } from '@/data/maps';
 import { getMobById } from '@/data/mobs';
 import type { MapInfo } from '@/types/map';
@@ -52,7 +53,7 @@ export class MapSelectionUI extends Container {
 
   private createBackground(): void {
     // Semi-transparent overlay
-    this.background.rect(0, 0, window.innerWidth, window.innerHeight);
+    this.background.rect(0, 0, GAME_CONFIG.WIDTH, GAME_CONFIG.HEIGHT);
     this.background.fill({ color: 0x000000, alpha: 0.7 });
     this.background.eventMode = 'static';
     this.background.on('pointerdown', () => {
@@ -61,8 +62,8 @@ export class MapSelectionUI extends Container {
   }
 
   private createHeader(): void {
-    const panelX = (window.innerWidth - this.panelWidth) / 2;
-    const panelY = (window.innerHeight - this.panelHeight) / 2;
+    const panelX = (GAME_CONFIG.WIDTH - this.panelWidth) / 2;
+    const panelY = (GAME_CONFIG.HEIGHT - this.panelHeight) / 2;
 
     // Panel background
     const panel = new Graphics();
@@ -124,8 +125,8 @@ export class MapSelectionUI extends Container {
 
   private createMapList(): void {
     const maps = getFieldMaps();
-    const panelX = (window.innerWidth - this.panelWidth) / 2;
-    const panelY = (window.innerHeight - this.panelHeight) / 2;
+    const panelX = (GAME_CONFIG.WIDTH - this.panelWidth) / 2;
+    const panelY = (GAME_CONFIG.HEIGHT - this.panelHeight) / 2;
     const startY = 10; // Start from relative position within scroll container
 
     // Group maps by streetName > mapMark
@@ -393,7 +394,7 @@ export class MapSelectionUI extends Container {
   }
 
   private updateScrollPosition(): void {
-    this.scrollContainer.y = (window.innerHeight - this.panelHeight) / 2 + 70 - this.scrollY;
+    this.scrollContainer.y = (GAME_CONFIG.HEIGHT - this.panelHeight) / 2 + 70 - this.scrollY;
   }
 
   // ============================================================================

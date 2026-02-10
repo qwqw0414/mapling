@@ -1,5 +1,7 @@
 # Mapling - 개발 히스토리
 
+[2026-02-10] [FEAT] Electron 데스크톱 앱 지원: vite-plugin-electron 연동, 메인/프리로드 프로세스, electron-builder 패키징 설정(mac/win/linux)
+[2026-02-10] [CONFIG] 화면 1280x720 고정: Electron 창 리사이징 비활성화, 반응형 레이아웃 코드 전면 제거(updateMapSize/onResize/resize 등)
 [2026-02-06] 캐릭터 스프라이트: maplestory.io Character API 연동, 32종 모션 GIF(stand/walk/attack/stab/shoot 등), L1/L2 캐싱, 외형(CharacterLook) 시스템
 [2026-02-06] 자동전투 시스템: AutoCombatSystem(캐릭터별 개별딜레이/타겟팅), Post-BB 데미지 공식, LevelSystem(EXP분배/레벨업/HP/MP성장), 전투/대기 토글 버튼
 [2026-02-06] 직업/EXP 데이터: jobs.ts(5대직업 4차전직 전체 30종), expTable.ts(Lv1-200 필요경험치)

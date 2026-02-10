@@ -59,13 +59,13 @@ export class MonsterSystem {
   private monsters: Map<string, MonsterState> = new Map();
   private monsterSprites: Map<string, Container> = new Map();
   private mobGifSources: Map<string, GifSource> = new Map();
-  private fieldLayer: Container;
-  private fieldWidth: number;
-  private fieldHeight: number;
+  private readonly fieldLayer: Container;
+  private readonly fieldWidth: number;
+  private readonly fieldHeight: number;
 
-  // Cached field bounds (recalculated on resize)
-  private fieldMinX = 0;
-  private fieldMaxX = 0;
+  // Cached field bounds
+  private readonly fieldMinX: number;
+  private readonly fieldMaxX: number;
 
   private spawnTimer = 0;
   private monsterIdCounter = 0;
@@ -74,7 +74,10 @@ export class MonsterSystem {
     this.fieldLayer = fieldLayer;
     this.fieldWidth = fieldWidth;
     this.fieldHeight = fieldHeight;
-    this.updateFieldBoundsCache();
+
+    const fieldPadding = LAYOUT_CONFIG.FIELD_AREA.PADDING;
+    this.fieldMinX = fieldPadding + 50;
+    this.fieldMaxX = this.fieldWidth - fieldPadding - 50;
   }
 
   // ============================================================================
@@ -87,19 +90,6 @@ export class MonsterSystem {
 
   setMobAssets(mobGifSources: Map<string, GifSource>): void {
     this.mobGifSources = mobGifSources;
-  }
-
-  setFieldDimensions(width: number, height: number): void {
-    this.fieldWidth = width;
-    this.fieldHeight = height;
-    this.updateFieldBoundsCache();
-    this.updateMonstersFieldBounds();
-  }
-
-  private updateFieldBoundsCache(): void {
-    const fieldPadding = LAYOUT_CONFIG.FIELD_AREA.PADDING;
-    this.fieldMinX = fieldPadding + 50;
-    this.fieldMaxX = this.fieldWidth - fieldPadding - 50;
   }
 
   getMonster(instanceId: string): MonsterState | undefined {
@@ -429,24 +419,6 @@ export class MonsterSystem {
         const shouldShowHpBar = monster.lastHitTime > 0 &&
           timeSinceHit < MONSTER_BEHAVIOR_CONFIG.HP_BAR_DISPLAY_DURATION;
         hpBarContainer.visible = shouldShowHpBar;
-      }
-    }
-  }
-
-  private updateMonstersFieldBounds(): void {
-    for (const [id, monster] of this.monsters) {
-      const groundY = this.fieldHeight - 30;
-      monster.baseY = groundY;
-      if (!monster.isJumping) {
-        monster.y = groundY;
-      }
-
-      monster.x = Math.max(this.fieldMinX, Math.min(this.fieldMaxX, monster.x));
-
-      const sprite = this.monsterSprites.get(id);
-      if (sprite) {
-        sprite.x = monster.x;
-        sprite.y = monster.y;
       }
     }
   }

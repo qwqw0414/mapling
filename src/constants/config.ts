@@ -3,7 +3,7 @@
 // ============================================================================
 
 export const GAME_CONFIG = {
-  // Display (initial values, will be updated on resize)
+  // Display (fixed 1280x720)
   WIDTH: 1280,
   HEIGHT: 720,
   BACKGROUND_COLOR: 0x000000, // Black background
@@ -27,55 +27,32 @@ export const GAME_CONFIG = {
 };
 
 // ============================================================================
-// Map Configuration (동적으로 업데이트됨)
+// Map Configuration (1280x720 고정)
 // ============================================================================
 
 export const MAP_CONFIG = {
-  // 맵 크기 (반응형으로 업데이트됨)
   WIDTH: 1280,
   HEIGHT: 720,
 
-  // 캐릭터 위치 (좌측 고정, 비율로 계산)
-  CHARACTER_X: 200,
+  // 캐릭터 위치 (좌측 15%)
+  CHARACTER_X: 192,
 
-  // 몬스터 스폰 영역 (비율로 계산)
+  // 몬스터 스폰 영역 (8% ~ 92%)
   SPAWN_AREA: {
-    MIN_X: 100,
-    MAX_X: 1180,
+    MIN_X: 102,
+    MAX_X: 1178,
   },
 
-  // 층(플랫폼) 기본 Y 좌표 (비율로 계산)
+  // 층(플랫폼) Y 좌표
   PLATFORM_Y: {
-    FLOOR_1: 620,
-    FLOOR_2: 460,
-    FLOOR_3: 300,
+    FLOOR_1: 619,
+    FLOOR_2: 461,
+    FLOOR_3: 302,
   },
 
   // 층 간 이동 시간 (ms)
   PLATFORM_MOVE_TIME: 500,
-};
-
-/**
- * Update map size based on container dimensions
- */
-export function updateMapSize(width: number, height: number): void {
-  MAP_CONFIG.WIDTH = width;
-  MAP_CONFIG.HEIGHT = height;
-  GAME_CONFIG.WIDTH = width;
-  GAME_CONFIG.HEIGHT = height;
-
-  // Update spawn area (10% margin from edges)
-  MAP_CONFIG.SPAWN_AREA.MIN_X = Math.round(width * 0.08);
-  MAP_CONFIG.SPAWN_AREA.MAX_X = Math.round(width * 0.92);
-
-  // Update character position (left side)
-  MAP_CONFIG.CHARACTER_X = Math.round(width * 0.15);
-
-  // Update platform Y positions (relative to height)
-  MAP_CONFIG.PLATFORM_Y.FLOOR_1 = Math.round(height * 0.86);
-  MAP_CONFIG.PLATFORM_Y.FLOOR_2 = Math.round(height * 0.64);
-  MAP_CONFIG.PLATFORM_Y.FLOOR_3 = Math.round(height * 0.42);
-}
+} as const;
 
 // ============================================================================
 // Spawn Configuration
@@ -205,9 +182,9 @@ export const LAYOUT_CONFIG = {
 } as const;
 
 export const SLOT_CONFIG = {
-  // 슬롯 크기 (최소값)
-  MIN_WIDTH: 180,
-  MIN_HEIGHT: 180,
+  // 슬롯 크기
+  WIDTH: 180,
+  HEIGHT: 180,
 
   // 내부 패딩
   PADDING: 10,

@@ -30,8 +30,8 @@ interface PartySlotOptions {
  * Shows empty slot indicator if no character assigned
  */
 export class PartySlot extends Container {
-  private slotWidth: number;
-  private slotHeight: number;
+  private readonly slotWidth: number;
+  private readonly slotHeight: number;
   private readonly slotIndex: number;
   private readonly padding: number;
 
@@ -211,22 +211,6 @@ export class PartySlot extends Container {
     requestAnimationFrame(animate);
   }
 
-  /**
-   * Resize slot
-   */
-  public resize(width: number, height: number): void {
-    this.slotWidth = width;
-    this.slotHeight = height;
-    this.drawBackground();
-
-    // Re-layout character UI if character exists
-    if (this.character) {
-      this.showCharacterUI(this.character);
-    } else {
-      this.updateEmptyIndicatorPosition();
-    }
-  }
-
   // ============================================================================
   // Private Methods - Empty Slot
   // ============================================================================
@@ -261,13 +245,6 @@ export class PartySlot extends Container {
     container.y = this.slotHeight / 2;
 
     return container;
-  }
-
-  private updateEmptyIndicatorPosition(): void {
-    if (this.emptyIndicator) {
-      this.emptyIndicator.x = this.slotWidth / 2;
-      this.emptyIndicator.y = this.slotHeight / 2;
-    }
   }
 
   private showEmptySlot(): void {

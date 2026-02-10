@@ -1,5 +1,5 @@
 import { Application } from 'pixi.js';
-import { GAME_CONFIG, updateMapSize } from '@/constants/config';
+import { GAME_CONFIG } from '@/constants/config';
 import type { BaseScene } from './scenes/BaseScene';
 import { MainScene } from './scenes/MainScene';
 import { AssetManager } from './systems/AssetManager';
@@ -13,12 +13,10 @@ export class Game {
   private container: HTMLElement;
   private currentScene: BaseScene | null = null;
   private isInitialized = false;
-  private resizeHandler: () => void;
 
   constructor(container: HTMLElement) {
     this.container = container;
     this.app = new Application();
-    this.resizeHandler = this.handleResize.bind(this);
   }
 
   // ============================================================================
@@ -30,18 +28,13 @@ export class Game {
       return;
     }
 
-    // Get initial size from container
-    const { width, height } = this.getContainerSize();
-    updateMapSize(width, height);
-
     await this.app.init({
-      width,
-      height,
+      width: GAME_CONFIG.WIDTH,
+      height: GAME_CONFIG.HEIGHT,
       backgroundColor: GAME_CONFIG.BACKGROUND_COLOR,
       antialias: true,
       resolution: window.devicePixelRatio || 1,
       autoDensity: true,
-      resizeTo: this.container,
     });
 
     this.container.appendChild(this.app.canvas);
@@ -50,7 +43,6 @@ export class Game {
     await AssetManager.getInstance().init();
 
     this.setupGameLoop();
-    this.setupResizeListener();
     this.isInitialized = true;
 
     console.log('[Game] Initialized');
@@ -75,7 +67,6 @@ export class Game {
   }
 
   destroy(): void {
-    window.removeEventListener('resize', this.resizeHandler);
     this.app.destroy(true);
   }
 
@@ -99,28 +90,5 @@ export class Game {
         this.currentScene.update(time.deltaTime);
       }
     });
-  }
-
-  private setupResizeListener(): void {
-    window.addEventListener('resize', this.resizeHandler);
-  }
-
-  private handleResize(): void {
-    const { width, height } = this.getContainerSize();
-    updateMapSize(width, height);
-
-    // Notify current scene about resize if it supports it
-    if (this.currentScene && 'onResize' in this.currentScene) {
-      (this.currentScene as BaseScene & { onResize: (w: number, h: number) => void }).onResize(width, height);
-    }
-
-    console.log(`[Game] Resized to ${width}x${height}`);
-  }
-
-  private getContainerSize(): { width: number; height: number } {
-    return {
-      width: this.container.clientWidth || window.innerWidth,
-      height: this.container.clientHeight || window.innerHeight,
-    };
   }
 }

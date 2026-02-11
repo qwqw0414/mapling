@@ -1,0 +1,129 @@
+{
+  "id": 1210102,
+  "name": "주황버섯",
+  "nameEn": "Orange Mushroom",
+  "meta": {
+    "level": 8,
+    "maxHp": 80,
+    "maxMp": 45,
+    "exp": 15,
+    "speed": 0,
+    "physicalDamage": 42,
+    "physicalDefense": 0,
+    "magicDamage": 0,
+    "magicDefense": 10,
+    "accuracy": 42,
+    "evasion": 1,
+    "isBoss": false,
+    "isBodyAttack": true
+  },
+  "drops": [
+    {
+      "itemId": 4000001,
+      "name": "주황버섯의 갓",
+      "chance": 40
+    },
+    {
+      "itemId": 2000000,
+      "name": "빨간 포션",
+      "chance": 1
+    },
+    {
+      "itemId": 4010000,
+      "name": "청동의 원석",
+      "chance": 0.8
+    },
+    {
+      "itemId": 2061000,
+      "name": "석궁전용 화살",
+      "chance": 0.8,
+      "minQuantity": 10,
+      "maxQuantity": 20
+    },
+    {
+      "itemId": 2060000,
+      "name": "활전용 화살",
+      "chance": 0.8,
+      "minQuantity": 10,
+      "maxQuantity": 20
+    },
+    {
+      "itemId": 4020007,
+      "name": "다이아몬드의 원석",
+      "chance": 0.08
+    },
+    {
+      "itemId": 1432000,
+      "name": "창",
+      "chance": 0.05
+    },
+    {
+      "itemId": 1312000,
+      "name": "양날 도끼",
+      "chance": 0.05
+    },
+    {
+      "itemId": 1002043,
+      "name": "브론즈 코이프",
+      "chance": 0.03
+    },
+    {
+      "itemId": 1072004,
+      "name": "흰색 고무신",
+      "chance": 0.03
+    },
+    {
+      "itemId": 4030001,
+      "name": "버섯 오목알",
+      "chance": 0.03
+    },
+    {
+      "itemId": 1082012,
+      "name": "아르",
+      "chance": 0.01
+    },
+    {
+      "itemId": 1072015,
+      "name": "브라운 하드래더 부츠",
+      "chance": 0.01
+    },
+    {
+      "itemId": 1072031,
+      "name": "빨간색 닌자 샌들",
+      "chance": 0.01
+    },
+    {
+      "itemId": 2330000,
+      "name": "불릿",
+      "chance": 0.004
+    },
+    {
+      "itemId": 2040705,
+      "name": "신발 점프력 주문서 10%",
+      "chance": 0.003
+    },
+    {
+      "itemId": 1052095,
+      "name": "브라운 로키 슈트",
+      "chance": 0.001
+    }
+  ],
+  "canJump": true,
+  "description": "레벨 : Lv.8 형태 : 식물형  메이플 아일랜드와 빅토리아 아일랜드 전역에서 볼 수 있는 버섯 몬스터이다. 간혹 남의 집에 몰래 숨어들어가 집에 있는 음식들을 먹어치워 매우 강력한 머쉬맘으로 변하기도 한다.",
+  "meso": {
+    "amount": 18,
+    "chance": 65
+  },
+  "foundAt": [
+    50001,
+    1000001,
+    103020100,
+    103030000,
+    103030100,
+    103030200,
+    104010000,
+    104010002,
+    104020000,
+    104030001
+  ]
+}

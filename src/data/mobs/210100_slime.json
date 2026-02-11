@@ -1,0 +1,144 @@
+{
+  "id": 210100,
+  "name": "슬라임",
+  "meta": {
+    "level": 6,
+    "maxHp": 50,
+    "maxMp": 35,
+    "exp": 10,
+    "speed": -20,
+    "physicalDamage": 32,
+    "physicalDefense": 5,
+    "magicDamage": 0,
+    "magicDefense": 10,
+    "accuracy": 35,
+    "evasion": 1,
+    "isBoss": false,
+    "isBodyAttack": true
+  },
+  "drops": [
+    {
+      "itemId": 4000004,
+      "name": "물컹물컹한 액체",
+      "chance": 40
+    },
+    {
+      "itemId": 4000010,
+      "name": "슬라임의 방울",
+      "chance": 3
+    },
+    {
+      "itemId": 2000000,
+      "name": "빨간 포션",
+      "chance": 1
+    },
+    {
+      "itemId": 2061000,
+      "name": "석궁전용 화살",
+      "chance": 0.8,
+      "minQuantity": 10,
+      "maxQuantity": 20
+    },
+    {
+      "itemId": 2060000,
+      "name": "활전용 화살",
+      "chance": 0.8,
+      "minQuantity": 10,
+      "maxQuantity": 20
+    },
+    {
+      "itemId": 2010009,
+      "name": "초록사과",
+      "chance": 0.7
+    },
+    {
+      "itemId": 4020005,
+      "name": "사파이어의 원석",
+      "chance": 0.3
+    },
+    {
+      "itemId": 4010005,
+      "name": "오리할콘의 원석",
+      "chance": 0.2
+    },
+    {
+      "itemId": 2380005,
+      "name": "슬라임 카드",
+      "chance": 0.1
+    },
+    {
+      "itemId": 1412001,
+      "name": "쇠 도끼",
+      "chance": 0.08
+    },
+    {
+      "itemId": 1072023,
+      "name": "베이지 니티",
+      "chance": 0.03
+    },
+    {
+      "itemId": 1082019,
+      "name": "레모나",
+      "chance": 0.02
+    },
+    {
+      "itemId": 1322007,
+      "name": "가죽 핸드백",
+      "chance": 0.02
+    },
+    {
+      "itemId": 4030000,
+      "name": "슬라임 오목알",
+      "chance": 0.02
+    },
+    {
+      "itemId": 1002019,
+      "name": "흰색 두건",
+      "chance": 0.01
+    },
+    {
+      "itemId": 1432001,
+      "name": "포크 창",
+      "chance": 0.01
+    },
+    {
+      "itemId": 1412012,
+      "name": "철제 도끼",
+      "chance": 0.009
+    },
+    {
+      "itemId": 2040602,
+      "name": "하의 방어력 주문서 10%",
+      "chance": 0.003
+    },
+    {
+      "itemId": 2041018,
+      "name": "망토 민첩성 주문서 100%",
+      "chance": 0.003
+    },
+    {
+      "itemId": 1482000,
+      "name": "스틸 너클",
+      "chance": 0.001
+    }
+  ],
+  "nameEn": "Slime",
+  "canJump": true,
+  "description": "레벨 : Lv.6 형태 : 정령형 특이사항 : 전기속성 공격에 약함.  물컹물컹한 액체로 이루어져, 몸의 탄력을 이용하여 점프하는 몬스터이다. 빅토리아 아일랜드 전역에서 발견할 수 있다. 통통 튀어다니는 모습이 귀여워 모험가들에게 인기가 높은데, 그 때문에 슬라임의 모습을 본딴 모자나 귀고리 등의 장식품까지도 판매되고 있다고 한다. 사냥하면 물컹물컹한 액체를 얻을 수 있는데, 이 액체는 상큼한 사과향을 풍겨 요리 재료로도 쓰이는 것 같다. 가끔 머리에 달고 있는 방울을 모험가들에게 내놓기도 한다.",
+  "meso": {
+    "amount": 13,
+    "chance": 65
+  },
+  "foundAt": [
+    1000005,
+    1010004,
+    100040004,
+    100040100,
+    100050000,
+    101010000,
+    101010100,
+    101010101,
+    101010102,
+    101020000
+  ]
+}

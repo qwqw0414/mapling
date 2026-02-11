@@ -1,17 +1,17 @@
 {
   "id": 130101,
-  "name": "Red Snail",
+  "name": "빨간 달팽이",
   "meta": {
-    "level": 5,
-    "maxHp": 50,
-    "maxMp": 0,
+    "level": 4,
+    "maxHp": 40,
+    "maxMp": 30,
     "exp": 8,
     "speed": -50,
-    "physicalDamage": 15,
+    "physicalDamage": 27,
     "physicalDefense": 3,
-    "magicDamage": 12,
+    "magicDamage": 0,
     "magicDefense": 10,
-    "accuracy": 10,
+    "accuracy": 35,
     "evasion": 0,
     "isBoss": false,
     "isBodyAttack": true
@@ -113,18 +113,21 @@
     }
   ],
   "nameEn": "Red Snail",
-  "description": "There's apparently a rumor going around that says that the Blue Snails had turned red after leveling-up from their incessant combating, but such a rumor has not been confirmed. This monster can be spotted everywhere throughout Maple Island and Victoria Island. It has unbelievable speed and attack strengths, especially for a snail, which may make it somewhat of a challenging opponent for a beginner. A player who's reached Lv.3 on the 3 Snail Skill could use the Red Snail's shell as a throwable weapon too.",
+  "description": "레벨 : Lv.4 형태 : 동물형  모험가들과의 전투를 통해 레벨이 높아진 일부 파란 달팽이들이 깨달음을 얻어 빨간 달팽이로 변했다는 소문이 있지만 확인되지 않은 소문으로 진상은 알 수 없다. 메이플 아일랜드와 빅토리아 아일랜드 전역에서 볼 수 있다. 달팽이치고는 믿을 수 없는 공격력과 속도를 가지고 있어 초보자라면 상대하는데 애를 먹을 수도 있다. 달팽이 세마리 스킬을 3레벨까지 익힌 모험가라면 빨간 달팽이의 껍질을 던져 공격용 무기로 사용할 수 있다.",
   "meso": {
     "amount": 13,
     "chance": 65
   },
   "foundAt": [
-    101010100,
-    102050000,
-    104010100,
-    104010200,
-    680010000,
-    680010100,
-    100010100
+    50001,
+    1000001,
+    100030000,
+    100030001,
+    101030000,
+    101030100,
+    101030200,
+    101030300,
+    101030400,
+    101040000
   ]
 }

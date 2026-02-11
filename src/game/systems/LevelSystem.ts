@@ -33,22 +33,21 @@ export class LevelSystem {
   // ============================================================================
 
   /**
-   * Distribute monster EXP equally among combat-mode party members
+   * Distribute monster EXP equally among all party members
    * Processes level ups for each character
    */
   distributeExp(
     partyMembers: PartyCharacter[],
     totalExp: number,
   ): ExpDistributionResult {
-    const combatMembers = partyMembers.filter((c) => c.mode === 'combat');
-    if (combatMembers.length === 0) {
+    if (partyMembers.length === 0) {
       return { expPerCharacter: 0, levelUps: [] };
     }
 
-    const expPerCharacter = Math.floor(totalExp / combatMembers.length);
+    const expPerCharacter = Math.floor(totalExp / partyMembers.length);
     const levelUps: LevelUpResult[] = [];
 
-    for (const character of combatMembers) {
+    for (const character of partyMembers) {
       const result = this.addExp(character, expPerCharacter);
       if (result !== null) {
         levelUps.push(result);

@@ -8,6 +8,8 @@ import { getRequiredExp } from '@/data/expTable';
 import { getJobData } from '@/data/jobs';
 import type { PartyCharacter } from '@/types/party';
 import type { CharacterMode } from '@/types/character';
+import type { CharacterAnimation } from '@/data/characterLook';
+import { getAnimationSpriteOffset } from '@/data/characterLook';
 import type { EquipSlot, EquipItem } from '@/types/item';
 
 // ============================================================================
@@ -258,8 +260,10 @@ export class PartySlot extends Container {
 
   /**
    * Set character sprite (GIF animation or static texture)
+   * @param gifSource - GIF source to display
+   * @param animation - Animation name for per-animation position offset correction
    */
-  public setCharacterSprite(gifSource: GifSource | null): void {
+  public setCharacterSprite(gifSource: GifSource | null, animation?: CharacterAnimation): void {
     // Remove existing sprite
     if (this.characterSprite) {
       this.characterContainer.removeChild(this.characterSprite);
@@ -280,8 +284,11 @@ export class PartySlot extends Container {
     });
     // Anchor at bottom-right for consistent animation alignment
     gifSprite.anchor.set(1, 1);
-    gifSprite.x = this.slotWidth / 2 + 30;
-    gifSprite.y = spriteBottomY;
+
+    // Apply per-animation sprite offset correction
+    const offset = animation ? getAnimationSpriteOffset(animation) : { x: 0, y: 0 };
+    gifSprite.x = this.slotWidth / 2 + 30 + offset.x;
+    gifSprite.y = spriteBottomY + offset.y;
 
     this.characterSprite = gifSprite;
     this.characterContainer.addChildAt(gifSprite, 0);

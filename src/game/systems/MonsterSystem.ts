@@ -1,11 +1,16 @@
 import { Container, Graphics, Text } from 'pixi.js';
 import { GifSprite, GifSource } from 'pixi.js/gif';
 import {
-  SPAWN_CONFIG,
   MONSTER_BEHAVIOR_CONFIG,
   LAYOUT_CONFIG,
 } from '@/constants/config';
 import { getMobById } from '@/data/mobs';
+import {
+  getMaxMonsters,
+  getBatchSpawnCount,
+  getSpawnInterval,
+  getInitialSpawnRatio,
+} from './GlobalSkillResolver';
 import type { MapInfo } from '@/types/map';
 import type { MobData } from '@/types/monster';
 
@@ -111,7 +116,8 @@ export class MonsterSystem {
   spawnInitialMonsters(): void {
     if (!this.mapInfo) return;
 
-    const initialCount = Math.floor(SPAWN_CONFIG.MAX_MONSTERS * SPAWN_CONFIG.INITIAL_SPAWN_RATIO);
+    const maxMonsters = getMaxMonsters();
+    const initialCount = Math.floor(maxMonsters * getInitialSpawnRatio());
     for (let i = 0; i < initialCount; i++) {
       this.spawnMonster();
     }
@@ -122,16 +128,21 @@ export class MonsterSystem {
 
     this.spawnTimer += deltaTime * 16.67;
 
-    if (this.spawnTimer >= SPAWN_CONFIG.NORMAL_INTERVAL) {
+    const spawnInterval = getSpawnInterval();
+    if (this.spawnTimer >= spawnInterval) {
       this.spawnTimer = 0;
-      this.trySpawnMonster();
+      this.trySpawnMonsters();
     }
   }
 
-  private trySpawnMonster(): void {
+  private trySpawnMonsters(): void {
     if (!this.mapInfo) return;
 
-    if (this.monsters.size < SPAWN_CONFIG.MAX_MONSTERS) {
+    const maxMonsters = getMaxMonsters();
+    const batchCount = getBatchSpawnCount();
+
+    for (let i = 0; i < batchCount; i++) {
+      if (this.monsters.size >= maxMonsters) break;
       this.spawnMonster();
     }
   }
@@ -182,7 +193,7 @@ export class MonsterSystem {
   }
 
   private selectRandomMob(): MobData | null {
-    if (!this.mapInfo) return null;
+    if (!this.mapInfo?.spawns) return null;
 
     const mobs = this.mapInfo.spawns.normal.mobs;
     const totalWeight = mobs.reduce((sum, m) => sum + m.weight, 0);

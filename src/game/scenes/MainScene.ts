@@ -20,10 +20,12 @@ import { AutoCombatSystem } from '@/game/systems/AutoCombatSystem';
 import { PartySlot } from '@/game/ui/PartySlot';
 import { CharacterCreationUI } from '@/game/ui/CharacterCreationUI';
 import { MapSelectionUI } from '@/game/ui/MapSelectionUI';
+import { GlobalSkillUI } from '@/game/ui/GlobalSkillUI';
 import { InventoryUI } from '@/game/ui/InventoryUI';
 import { useCharacterStore } from '@/stores/characterStore';
 import { useInventoryStore } from '@/stores/inventoryStore';
 import { useGameStore } from '@/stores/gameStore';
+import { useGlobalSkillStore } from '@/stores/globalSkillStore';
 import {
   saveGame,
   loadGame,
@@ -215,6 +217,8 @@ export class MainScene extends BaseScene {
   private createCharacterButton: Container | null = null;
   private characterCreationUI: CharacterCreationUI | null = null;
   private mapSelectionUI: MapSelectionUI | null = null;
+  private globalSkillUI: GlobalSkillUI | null = null;
+  private globalSkillButton: Text | null = null;
   private inventoryUI: InventoryUI | null = null;
   private addCharacterButton: Container | null = null;
 
@@ -257,6 +261,7 @@ export class MainScene extends BaseScene {
     this.createLayers();
     this.initializeSystems();
     this.createMapButton();
+    this.createGlobalSkillButton();
     this.createRightPanel();
     this.createVerticalDivider();
     this.monsterSystem.spawnInitialMonsters();
@@ -420,6 +425,69 @@ export class MainScene extends BaseScene {
     this.mapTitleText.cursor = 'pointer';
     this.mapTitleText.on('pointerdown', () => this.openMapSelection());
     this.fieldLayer.addChild(this.mapTitleText);
+  }
+
+  // ============================================================================
+  // Global Skill Button (필드 좌측 상단, 맵 버튼 아래 오버레이)
+  // ============================================================================
+
+  private createGlobalSkillButton(): void {
+    const padding = LAYOUT_CONFIG.MAP_BUTTON.PADDING;
+    const mapButtonBottom = this.mapTitleText
+      ? this.mapTitleText.y + this.mapTitleText.height
+      : padding + 20;
+
+    this.globalSkillButton = new Text({
+      text: '글로벌 스킬',
+      style: {
+        fontSize: 14,
+        fill: 0x88ccff,
+        fontWeight: 'bold',
+        fontFamily: 'Arial',
+        dropShadow: { color: 0x000000, blur: 3, distance: 1, alpha: 0.8 },
+      },
+    });
+    this.globalSkillButton.x = padding;
+    this.globalSkillButton.y = mapButtonBottom + 8;
+    this.globalSkillButton.eventMode = 'static';
+    this.globalSkillButton.cursor = 'pointer';
+    this.globalSkillButton.on('pointerdown', () => this.openGlobalSkillUI());
+    this.globalSkillButton.on('pointerover', () => {
+      if (this.globalSkillButton) {
+        this.globalSkillButton.style.fill = 0xaaddff;
+      }
+    });
+    this.globalSkillButton.on('pointerout', () => {
+      if (this.globalSkillButton) {
+        this.globalSkillButton.style.fill = 0x88ccff;
+      }
+    });
+    this.fieldLayer.addChild(this.globalSkillButton);
+  }
+
+  private openGlobalSkillUI(): void {
+    if (this.globalSkillUI) return;
+
+    this.globalSkillUI = new GlobalSkillUI({
+      onClose: () => this.closeGlobalSkillUI(),
+    });
+    this.container.addChild(this.globalSkillUI);
+  }
+
+  private closeGlobalSkillUI(): void {
+    if (this.globalSkillUI) {
+      this.container.removeChild(this.globalSkillUI);
+      this.globalSkillUI.destroy();
+      this.globalSkillUI = null;
+
+      // Persist immediately after skill changes
+      this.saveCurrentState();
+
+      // Update inventory UI to reflect meso changes
+      if (this.inventoryUI) {
+        this.inventoryUI.updateMeso(useCharacterStore.getState().meso);
+      }
+    }
   }
 
   // ============================================================================
@@ -994,9 +1062,9 @@ export class MainScene extends BaseScene {
     // 1) Load idle animation FIRST and display immediately
     const slot = this.partySlots[slotIndex];
     if (slot) {
-      const idleGif = await this.resolveIdleGif(character, assetManager);
-      if (idleGif) {
-        slot.setCharacterSprite(idleGif);
+      const idleResult = await this.resolveIdleGif(character, assetManager);
+      if (idleResult) {
+        slot.setCharacterSprite(idleResult.source, idleResult.animation);
       }
     }
 
@@ -1014,27 +1082,29 @@ export class MainScene extends BaseScene {
   /**
    * Resolve idle animation GIF with fallback chain
    * stand2 (weapon idle) -> alert (combat ready) -> stand1 (unarmed idle)
+   * Returns both the GIF source and the resolved animation name for offset correction
    */
   private async resolveIdleGif(
     character: PartyCharacter,
     assetManager: AssetManager,
-  ): Promise<GifSource | null> {
+  ): Promise<{ source: GifSource; animation: import('@/data/characterLook').CharacterAnimation } | null> {
     const isArmed = hasWeapon(character);
 
     if (isArmed) {
       // Try stand2 first (weapon-holding idle)
       const stand2Gif = await assetManager.getCharacterGif(character.look, 'stand2');
-      if (stand2Gif) return stand2Gif;
+      if (stand2Gif) return { source: stand2Gif, animation: 'stand2' };
 
       // Fallback: alert (combat-ready stance, usually shows weapon)
       const alertGif = await assetManager.getCharacterGif(character.look, 'alert');
-      if (alertGif) return alertGif;
+      if (alertGif) return { source: alertGif, animation: 'alert' };
 
       console.warn(`[MainScene] stand2/alert failed, falling back to stand1: [name]=[${character.name}]`);
     }
 
     // Final fallback: stand1 (unarmed idle)
-    return assetManager.getCharacterGif(character.look, 'stand1');
+    const stand1Gif = await assetManager.getCharacterGif(character.look, 'stand1');
+    return stand1Gif ? { source: stand1Gif, animation: 'stand1' } : null;
   }
 
   /**
@@ -1050,16 +1120,21 @@ export class MainScene extends BaseScene {
 
     const assetManager = AssetManager.getInstance();
     let gifSource = await assetManager.getCharacterGif(character.look, animation);
+    let resolvedAnimation = animation;
 
     // Fallback: if requested animation fails, resolve idle
     if (!gifSource) {
       console.warn(`[MainScene] Animation failed, using idle fallback: [animation]=[${animation}] [name]=[${character.name}]`);
-      gifSource = await this.resolveIdleGif(character, assetManager);
+      const idleResult = await this.resolveIdleGif(character, assetManager);
+      if (idleResult) {
+        gifSource = idleResult.source;
+        resolvedAnimation = idleResult.animation;
+      }
     }
 
     const slot = this.partySlots[slotIndex];
     if (slot && gifSource) {
-      slot.setCharacterSprite(gifSource);
+      slot.setCharacterSprite(gifSource, resolvedAnimation);
     }
   }
 
@@ -1493,6 +1568,11 @@ export class MainScene extends BaseScene {
       if (slot) invStore.addItem(slot.item, slot.quantity);
     }
 
+    // Restore global skills
+    if (data.globalSkills) {
+      useGlobalSkillStore.getState().setSkillLevels(data.globalSkills);
+    }
+
     // Restore last map
     if (data.lastMapId) {
       const mapInfo = getMapById(data.lastMapId);
@@ -1523,6 +1603,7 @@ export class MainScene extends BaseScene {
 
     const invStore = useInventoryStore.getState();
     const charStore = useCharacterStore.getState();
+    const globalSkillStore = useGlobalSkillStore.getState();
 
     const isSaved = saveGame({
       party: activeCharacters.map((c) => toSavedCharacter(c)),
@@ -1537,6 +1618,7 @@ export class MainScene extends BaseScene {
       etcInventory: invStore.etcInventory.filter(
         (slot): slot is import('@/types/item').InventorySlot => slot !== null
       ),
+      globalSkills: { ...globalSkillStore.skillLevels },
     });
 
     if (isSaved) {
@@ -1604,9 +1686,20 @@ export class MainScene extends BaseScene {
       this.mapTitleText.off('pointerdown');
     }
 
+    if (this.globalSkillButton) {
+      this.globalSkillButton.off('pointerdown');
+      this.globalSkillButton.off('pointerover');
+      this.globalSkillButton.off('pointerout');
+    }
+
     if (this.mapSelectionUI) {
       this.mapSelectionUI.destroy();
       this.mapSelectionUI = null;
+    }
+
+    if (this.globalSkillUI) {
+      this.globalSkillUI.destroy();
+      this.globalSkillUI = null;
     }
 
     if (this.characterCreationUI) {

@@ -1,6 +1,13 @@
 import { Container, Graphics, Sprite, Texture } from 'pixi.js';
 import { AssetManager } from './AssetManager';
 import { getItemById } from '@/data/items';
+import {
+  getMesoMultiplier,
+  getMesoDropChanceBonus,
+  getEquipDropMultiplier,
+  getUseDropMultiplier,
+  getEtcDropMultiplier,
+} from './GlobalSkillResolver';
 
 // ============================================================================
 // Drop System
@@ -8,7 +15,6 @@ import { getItemById } from '@/data/items';
 
 export class DropSystem {
   private fieldLayer: Container;
-  private _rightPanel: Container;
   private fieldWidth: number;
   private fieldHeight: number;
   private itemPickupSound: HTMLAudioElement | null = null;
@@ -24,12 +30,11 @@ export class DropSystem {
 
   constructor(
     fieldLayer: Container,
-    rightPanel: Container,
+    _rightPanel: Container,
     fieldWidth: number,
     fieldHeight: number
   ) {
     this.fieldLayer = fieldLayer;
-    this._rightPanel = rightPanel;
     this.fieldWidth = fieldWidth;
     this.fieldHeight = fieldHeight;
   }
@@ -59,12 +64,14 @@ export class DropSystem {
   // ============================================================================
 
   tryDropMeso(meso: { amount: number; chance: number }): void {
-    if (Math.random() * 100 > meso.chance) {
+    const boostedChance = meso.chance + getMesoDropChanceBonus();
+    if (Math.random() * 100 > boostedChance) {
       return;
     }
 
+    const boostedAmount = Math.floor(meso.amount * getMesoMultiplier());
     if (this.onMesoGainCallback) {
-      this.onMesoGainCallback(meso.amount);
+      this.onMesoGainCallback(boostedAmount);
     }
   }
 
@@ -78,13 +85,17 @@ export class DropSystem {
     y: number
   ): void {
     for (const drop of drops) {
-      if (Math.random() * 100 <= drop.chance) {
-        // Skip if item data doesn't exist
-        const itemData = getItemById(drop.itemId);
-        if (!itemData) {
-          continue;
-        }
+      // Skip if item data doesn't exist
+      const itemData = getItemById(drop.itemId);
+      if (!itemData) {
+        continue;
+      }
 
+      // Apply category-specific drop rate multiplier
+      const dropMultiplier = this.getDropMultiplierByCategory(itemData.category);
+      const boostedChance = drop.chance * dropMultiplier;
+
+      if (Math.random() * 100 <= boostedChance) {
         const minQty = drop.minQuantity ?? 1;
         const maxQty = drop.maxQuantity ?? 1;
         const quantity = minQty + Math.floor(Math.random() * (maxQty - minQty + 1));
@@ -101,6 +112,15 @@ export class DropSystem {
 
         this.playItemPickupSound();
       }
+    }
+  }
+
+  private getDropMultiplierByCategory(category: string): number {
+    switch (category) {
+      case 'equip': return getEquipDropMultiplier();
+      case 'use': return getUseDropMultiplier();
+      case 'etc': return getEtcDropMultiplier();
+      default: return 1.0;
     }
   }
 

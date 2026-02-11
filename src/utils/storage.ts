@@ -3,13 +3,14 @@ import type { CharacterState, JobId, Stats, CombatStats } from '@/types/characte
 import type { Equipment, InventorySlot } from '@/types/item';
 import type { PartyCharacter } from '@/types/party';
 import type { LearnedSkill } from '@/types/skill';
+import type { GlobalSkillState } from '@/types/globalSkill';
 import type { CharacterLook } from '@/data/characterLook';
 
 // ============================================================================
 // Constants
 // ============================================================================
 
-const CURRENT_SAVE_VERSION = '0.2.0';
+const CURRENT_SAVE_VERSION = '0.3.0';
 const DEFAULT_MAP_ID = 104010001;
 
 // ============================================================================
@@ -60,6 +61,9 @@ export interface SaveData {
   useInventory: InventorySlot[];
   etcInventory: InventorySlot[];
 
+  /** Global skill levels (party-wide passive bonuses) */
+  globalSkills: GlobalSkillState;
+
   /** User preferences */
   settings: GameSettings;
 
@@ -91,6 +95,23 @@ interface LegacySaveDataV01 {
   character: CharacterState | null;
   meso: number;
   equipment: Equipment;
+  equipInventory: InventorySlot[];
+  useInventory: InventorySlot[];
+  etcInventory: InventorySlot[];
+  settings: GameSettings;
+  statistics: GameStatistics;
+}
+
+// ============================================================================
+// Legacy Save Data (v0.2.0) for Migration
+// ============================================================================
+
+interface LegacySaveDataV02 {
+  version: string;
+  timestamp: number;
+  party: SavedCharacter[];
+  meso: number;
+  lastMapId: number;
   equipInventory: InventorySlot[];
   useInventory: InventorySlot[];
   etcInventory: InventorySlot[];
@@ -237,7 +258,7 @@ export function toPartyCharacter(saved: SavedCharacter): PartyCharacter {
 
 /**
  * Detect save version and apply migrations as needed.
- * Supports: v0.1.0 (legacy single-character) -> v0.2.0 (party system)
+ * Supports chain migration: v0.1.0 -> v0.2.0 -> v0.3.0
  */
 function migrateSaveData(raw: Record<string, unknown>): SaveData {
   const version = (raw.version as string) ?? '0.1.0';
@@ -248,7 +269,13 @@ function migrateSaveData(raw: Record<string, unknown>): SaveData {
 
   if (version === '0.1.0') {
     console.log('[Storage] Migrating save data: v0.1.0 -> v0.2.0');
-    return migrateV01ToV02(raw as unknown as LegacySaveDataV01);
+    const v02 = migrateV01ToV02(raw as unknown as LegacySaveDataV01);
+    return migrateV02ToV03(v02 as unknown as LegacySaveDataV02);
+  }
+
+  if (version === '0.2.0') {
+    console.log('[Storage] Migrating save data: v0.2.0 -> v0.3.0');
+    return migrateV02ToV03(raw as unknown as LegacySaveDataV02);
   }
 
   // Unknown version -- return empty to avoid corruption
@@ -259,7 +286,7 @@ function migrateSaveData(raw: Record<string, unknown>): SaveData {
 /**
  * Migrate v0.1.0 (single character + separate equipment) to v0.2.0 (party array)
  */
-function migrateV01ToV02(old: LegacySaveDataV01): SaveData {
+function migrateV01ToV02(old: LegacySaveDataV01): LegacySaveDataV02 {
   const party: SavedCharacter[] = [];
 
   if (old.character) {
@@ -288,7 +315,7 @@ function migrateV01ToV02(old: LegacySaveDataV01): SaveData {
   }
 
   return {
-    version: CURRENT_SAVE_VERSION,
+    version: '0.2.0',
     timestamp: Date.now(),
     party,
     meso: old.meso ?? 0,
@@ -296,6 +323,25 @@ function migrateV01ToV02(old: LegacySaveDataV01): SaveData {
     equipInventory: old.equipInventory ?? [],
     useInventory: old.useInventory ?? [],
     etcInventory: old.etcInventory ?? [],
+    settings: old.settings ?? { ...DEFAULT_SETTINGS },
+    statistics: old.statistics ?? { ...DEFAULT_STATISTICS },
+  };
+}
+
+/**
+ * Migrate v0.2.0 (no global skills) to v0.3.0 (global skills added)
+ */
+function migrateV02ToV03(old: LegacySaveDataV02): SaveData {
+  return {
+    version: CURRENT_SAVE_VERSION,
+    timestamp: Date.now(),
+    party: old.party ?? [],
+    meso: old.meso ?? 0,
+    lastMapId: old.lastMapId ?? DEFAULT_MAP_ID,
+    equipInventory: old.equipInventory ?? [],
+    useInventory: old.useInventory ?? [],
+    etcInventory: old.etcInventory ?? [],
+    globalSkills: {},
     settings: old.settings ?? { ...DEFAULT_SETTINGS },
     statistics: old.statistics ?? { ...DEFAULT_STATISTICS },
   };
@@ -315,6 +361,7 @@ function createEmptySaveData(): SaveData {
     equipInventory: [],
     useInventory: [],
     etcInventory: [],
+    globalSkills: {},
     settings: { ...DEFAULT_SETTINGS },
     statistics: { ...DEFAULT_STATISTICS },
   };

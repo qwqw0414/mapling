@@ -158,7 +158,7 @@ export class MapSelectionUI extends Container {
           mapItem.x = mapMark ? 50 : 35;
           mapItem.y = currentY;
           this.scrollContainer.addChild(mapItem);
-          currentY += 85;
+          currentY += 58;
         }
       }
 
@@ -209,7 +209,7 @@ export class MapSelectionUI extends Container {
     const container = new Container();
 
     const text = new Text({
-      text: `📍 ${streetName}`,
+      text: streetName,
       style: {
         fontSize: 16,
         fill: 0xffdd44,
@@ -240,8 +240,9 @@ export class MapSelectionUI extends Container {
 
   private createMapItem(map: MapInfo): Container {
     const container = new Container();
-    const itemWidth = 340; // Fixed width for consistency
-    const itemHeight = 75;
+    const itemWidth = 370;
+    const itemHeight = 50;
+    const paddingX = 12;
 
     // Background
     const bg = new Graphics();
@@ -274,57 +275,34 @@ export class MapSelectionUI extends Container {
 
     container.addChild(bg);
 
-    // Map Icon (Region-based)
-    const iconSize = 50;
-    const iconBg = new Graphics();
-    const iconColor = this.getRegionColor(map.streetName);
-    iconBg.roundRect(0, 0, iconSize, iconSize, 8);
-    iconBg.fill({ color: iconColor, alpha: 0.3 });
-    iconBg.stroke({ color: iconColor, width: 2 });
-    iconBg.x = 10;
-    iconBg.y = (itemHeight - iconSize) / 2;
-    container.addChild(iconBg);
-
-    // Icon emoji
-    const iconText = new Text({
-      text: this.getRegionEmoji(map.streetName),
-      style: {
-        fontSize: 24,
-        fontFamily: 'Arial',
-      },
-    });
-    iconText.x = iconBg.x + (iconSize - iconText.width) / 2;
-    iconText.y = iconBg.y + (iconSize - iconText.height) / 2;
-    container.addChild(iconText);
-
     // Map name
     const nameText = new Text({
       text: map.name,
       style: {
-        fontSize: 18,
+        fontSize: 14,
         fill: 0xffffff,
         fontWeight: 'bold',
         fontFamily: 'Arial',
       },
     });
-    nameText.x = iconBg.x + iconSize + 15;
-    nameText.y = 10;
+    nameText.x = paddingX;
+    nameText.y = 8;
     container.addChild(nameText);
 
-    // Level range
+    // Level range (next to map name)
     const levelRange = map.recommendedLevel
       ? `Lv.${map.recommendedLevel.min}-${map.recommendedLevel.max}`
       : 'Lv.?';
     const levelText = new Text({
       text: levelRange,
       style: {
-        fontSize: 14,
-        fill: 0xaaaaaa,
+        fontSize: 11,
+        fill: 0x999999,
         fontFamily: 'Arial',
       },
     });
-    levelText.x = iconBg.x + iconSize + 15;
-    levelText.y = 35;
+    levelText.x = nameText.x + nameText.width + 8;
+    levelText.y = 10;
     container.addChild(levelText);
 
     // Monster list
@@ -337,43 +315,31 @@ export class MapSelectionUI extends Container {
 
     if (mobNames.length > 0) {
       const monstersText = new Text({
-        text: `🎯 ${mobNames.join(', ')}`,
+        text: mobNames.join(', '),
         style: {
-          fontSize: 12,
-          fill: 0xcccccc,
+          fontSize: 11,
+          fill: 0xaaaaaa,
           fontFamily: 'Arial',
         },
       });
-      monstersText.x = iconBg.x + iconSize + 15;
-      monstersText.y = 56;
+      monstersText.x = paddingX;
+      monstersText.y = 30;
       container.addChild(monstersText);
     }
 
-    // Current map indicator
+    // Current map indicator / move button
     if (isCurrentMap) {
       const currentLabel = new Text({
-        text: '✓ 현재 위치',
+        text: '현재',
         style: {
-          fontSize: 14,
+          fontSize: 11,
           fill: 0x88ff88,
           fontFamily: 'Arial',
         },
       });
-      currentLabel.x = itemWidth - currentLabel.width - 15;
-      currentLabel.y = 12;
+      currentLabel.x = itemWidth - currentLabel.width - paddingX;
+      currentLabel.y = 10;
       container.addChild(currentLabel);
-    } else {
-      const moveButton = new Text({
-        text: '→ 이동',
-        style: {
-          fontSize: 14,
-          fill: 0xffdd44,
-          fontFamily: 'Arial',
-        },
-      });
-      moveButton.x = itemWidth - moveButton.width - 15;
-      moveButton.y = 12;
-      container.addChild(moveButton);
     }
 
     return container;
@@ -395,40 +361,6 @@ export class MapSelectionUI extends Container {
 
   private updateScrollPosition(): void {
     this.scrollContainer.y = (GAME_CONFIG.HEIGHT - this.panelHeight) / 2 + 70 - this.scrollY;
-  }
-
-  // ============================================================================
-  // Helper Methods
-  // ============================================================================
-
-  private getRegionColor(streetName?: string): number {
-    switch (streetName) {
-      case '빅토리아 아일랜드':
-        return 0x66bb66; // Green
-      case '히든 스트리트':
-        return 0x9966ff; // Purple
-      case '엘나스 산맥':
-        return 0x66ccff; // Light Blue
-      case '커닝 시티':
-        return 0xffaa44; // Orange
-      default:
-        return 0x888888; // Gray
-    }
-  }
-
-  private getRegionEmoji(streetName?: string): string {
-    switch (streetName) {
-      case '빅토리아 아일랜드':
-        return '🌳';
-      case '히든 스트리트':
-        return '🔮';
-      case '엘나스 산맥':
-        return '❄️';
-      case '커닝 시티':
-        return '🏙️';
-      default:
-        return '🗺️';
-    }
   }
 
   // ============================================================================

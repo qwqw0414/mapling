@@ -14,3 +14,4 @@ export { DamageSystem } from './DamageSystem';
 export { DropSystem } from './DropSystem';
 export { LogSystem } from './LogSystem';
 export { FieldView } from './FieldView';
+export * from './GlobalSkillResolver';

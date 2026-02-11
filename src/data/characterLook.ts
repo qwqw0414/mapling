@@ -200,6 +200,85 @@ export function buildLookCacheKey(look: CharacterLook, animation: CharacterAnima
 }
 
 // ============================================================================
+// Animation Sprite Offset (per-animation position correction)
+// ============================================================================
+
+/**
+ * Per-animation X/Y offset to correct sprite position shift
+ * when switching between animations with different GIF sizes.
+ *
+ * Usage:
+ *   1. Set offsets in ANIMATION_SPRITE_OFFSETS below
+ *   2. Positive X = move right, Negative X = move left
+ *   3. Positive Y = move down,  Negative Y = move up
+ *   4. Unregistered animations use { x: 0, y: 0 } (no correction)
+ */
+export interface AnimationSpriteOffset {
+  /** Horizontal offset in pixels (positive = right) */
+  x: number;
+  /** Vertical offset in pixels (positive = down) */
+  y: number;
+}
+
+/**
+ * Offset map for each animation type.
+ * Adjust values here to fix position jumps between animations.
+ *
+ * Example: if swingO1 appears 5px too far right and 3px too high,
+ *          set swingO1: { x: -5, y: 3 }
+ */
+const ANIMATION_SPRITE_OFFSETS: Partial<Record<CharacterAnimation, AnimationSpriteOffset>> = {
+  // -- Idle / Standing --
+  // stand1: { x: 0, y: 0 },
+  // stand2: { x: 0, y: 0 },
+  // alert:  { x: 0, y: 0 },
+
+  // -- One-handed swing --
+  // swingO1: { x: 0, y: 0 },
+  // swingO2: { x: 0, y: 0 },
+  // swingO3: { x: 0, y: 0 },
+  // swingOF: { x: 0, y: 0 },
+
+  // -- Two-handed swing --
+  // swingT1: { x: 0, y: 0 },
+  // swingT2: { x: 0, y: 0 },
+  // swingT3: { x: 0, y: 0 },
+  // swingTF: { x: 0, y: 0 },
+
+  // -- Polearm swing --
+  // swingP1: { x: 0, y: 0 },
+  // swingP2: { x: 0, y: 0 },
+  // swingPF: { x: 0, y: 0 },
+
+  // -- One-handed stab --
+  // stabO1: { x: 0, y: 0 },
+  // stabO2: { x: 0, y: 0 },
+  // stabOF: { x: 0, y: 0 },
+
+  // -- Two-handed stab --
+  // stabT1: { x: 0, y: 0 },
+  // stabT2: { x: 0, y: 0 },
+  // stabTF: { x: 0, y: 0 },
+
+  // -- Ranged --
+  // shoot1: { x: 0, y: 0 },
+  // shoot2: { x: 0, y: 0 },
+  // shootF: { x: 0, y: 0 },
+};
+
+/** Default offset when no specific offset is registered */
+const DEFAULT_SPRITE_OFFSET: AnimationSpriteOffset = { x: 0, y: 0 };
+
+/**
+ * Get the sprite position offset for a given animation.
+ * Returns { x: 0, y: 0 } if no offset is registered.
+ * @param animation - Animation name
+ */
+export function getAnimationSpriteOffset(animation: CharacterAnimation): AnimationSpriteOffset {
+  return ANIMATION_SPRITE_OFFSETS[animation] ?? DEFAULT_SPRITE_OFFSET;
+}
+
+// ============================================================================
 // Animation Selectors (delegated to weaponAnimations.ts)
 // ============================================================================
 

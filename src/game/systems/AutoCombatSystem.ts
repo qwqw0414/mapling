@@ -3,6 +3,7 @@ import type { MonsterState } from './MonsterSystem';
 import type { MobData } from '@/types/monster';
 import { CombatSystem } from './CombatSystem';
 import { LevelSystem } from './LevelSystem';
+import { getExpMultiplier } from './GlobalSkillResolver';
 import type { LevelUpResult } from './LevelSystem';
 
 // ============================================================================
@@ -137,7 +138,7 @@ export class AutoCombatSystem {
     partyMembers: PartyCharacter[],
     mobData: MobData,
   ): void {
-    const totalExp = mobData.meta.exp;
+    const totalExp = Math.floor(mobData.meta.exp * getExpMultiplier());
     const result = this.levelSystem.distributeExp(partyMembers, totalExp);
 
     for (const levelUp of result.levelUps) {

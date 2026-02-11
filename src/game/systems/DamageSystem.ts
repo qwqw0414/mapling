@@ -1,7 +1,6 @@
 import { Container, Graphics, Text } from 'pixi.js';
-import { getMobById } from '@/data/mobs';
 import type { MonsterState, MobAnimation } from './MonsterSystem';
-import { HIT_ANIMATION_DURATION, DEATH_FADE_DURATION } from './MonsterSystem';
+import { HIT_ANIMATION_DURATION } from './MonsterSystem';
 
 // ============================================================================
 // Damage System
@@ -15,8 +14,6 @@ export class DamageSystem {
   private readonly DAMAGE_STACK_RESET_TIME = 600;
 
   private mobSounds: Map<string, HTMLAudioElement> = new Map();
-
-  private onMonsterDeathCallback: ((instanceId: string) => void) | null = null;
 
   // Animation tracking for cleanup
   private isDestroyed = false;
@@ -32,10 +29,6 @@ export class DamageSystem {
 
   setMobSounds(mobSounds: Map<string, HTMLAudioElement>): void {
     this.mobSounds = mobSounds;
-  }
-
-  setOnMonsterDeath(callback: (instanceId: string) => void): void {
-    this.onMonsterDeathCallback = callback;
   }
 
   /**

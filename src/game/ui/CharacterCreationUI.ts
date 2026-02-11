@@ -1,4 +1,4 @@
-import { Container, Graphics, Text, Sprite, Texture } from 'pixi.js';
+import { Container, Graphics, Text, Sprite } from 'pixi.js';
 import { GifSprite } from 'pixi.js/gif';
 import { AssetManager } from '@/game/systems/AssetManager';
 import {

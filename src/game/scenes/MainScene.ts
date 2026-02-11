@@ -23,6 +23,14 @@ import { MapSelectionUI } from '@/game/ui/MapSelectionUI';
 import { InventoryUI } from '@/game/ui/InventoryUI';
 import { useCharacterStore } from '@/stores/characterStore';
 import { useInventoryStore } from '@/stores/inventoryStore';
+import { useGameStore } from '@/stores/gameStore';
+import {
+  saveGame,
+  loadGame,
+  hasSaveData,
+  toSavedCharacter,
+  toPartyCharacter,
+} from '@/utils/storage';
 import {
   createLookWithChoices,
   CORE_ANIMATIONS,
@@ -34,6 +42,12 @@ import type { MapInfo } from '@/types/map';
 import type { PartyCharacter } from '@/types/party';
 import type { Stats } from '@/types/character';
 import type { ItemCategory, EquipItem, Equipment, EquipSlot } from '@/types/item';
+
+// ============================================================================
+// Constants
+// ============================================================================
+
+const DEFAULT_MAP_ID = 104010001;
 
 // ============================================================================
 // Equipment Stat Calculation
@@ -207,6 +221,9 @@ export class MainScene extends BaseScene {
   // Party data
   private partyCharacters: Array<PartyCharacter | null> = [];
 
+  // Auto-save timer
+  private autoSaveTimer: ReturnType<typeof setInterval> | null = null;
+
   constructor(mapId: number = 104010001) {
     super();
     this.mapInfo = getMapById(mapId) ?? null;
@@ -233,6 +250,9 @@ export class MainScene extends BaseScene {
   }
 
   protected create(): void {
+    // Restore saved data before building UI
+    this.restoreSaveData();
+
     this.calculateLayout();
     this.createLayers();
     this.initializeSystems();
@@ -240,6 +260,9 @@ export class MainScene extends BaseScene {
     this.createRightPanel();
     this.createVerticalDivider();
     this.monsterSystem.spawnInitialMonsters();
+
+    // Start auto-save timer (real-time persistence)
+    this.startAutoSave();
 
     console.log('[MainScene] Created with layout:', this.layout);
   }
@@ -734,6 +757,9 @@ export class MainScene extends BaseScene {
     this.refreshInventory();
 
     console.log(`[MainScene] Unequipped: [slot]=[${equipSlot}] [item]=[${item.name}] [character]=[${character.name}] [weaponAttack]=[${character.weaponAttack}] [magicAttack]=[${character.magicAttack}]`);
+
+    // Persist immediately after equipment change
+    this.saveCurrentState();
   }
 
   /**
@@ -780,6 +806,9 @@ export class MainScene extends BaseScene {
     this.refreshInventory();
 
     console.log(`[MainScene] Equipped: [slot]=[${equipSlot}] [item]=[${item.name}] [character]=[${character.name}] [weaponAttack]=[${character.weaponAttack}] [magicAttack]=[${character.magicAttack}]`);
+
+    // Persist immediately after equipment change
+    this.saveCurrentState();
   }
 
   /**
@@ -937,6 +966,9 @@ export class MainScene extends BaseScene {
     this.reloadAllCharacterSprites();
 
     console.log(`[MainScene] Character created: [name]=[${newCharacter.name}] [stats]=[STR:${stats.str},DEX:${stats.dex},INT:${stats.int},LUK:${stats.luk}] [partySize]=[${this.partyCharacters.length}]`);
+
+    // Persist immediately after character creation
+    this.saveCurrentState();
   }
 
   /**
@@ -1149,6 +1181,9 @@ export class MainScene extends BaseScene {
 
     // Refresh UI
     this.updatePartySlotStats();
+
+    // Persist immediately after level up
+    this.saveCurrentState();
   }
 
   /**
@@ -1334,6 +1369,9 @@ export class MainScene extends BaseScene {
     // Resume update loop
     this.isChangingMap = false;
 
+    // Persist immediately after map change
+    this.saveCurrentState();
+
     console.log(`[MainScene] Map changed successfully to: [map]=[${this.mapInfo.name}]`);
   }
 
@@ -1415,10 +1453,125 @@ export class MainScene extends BaseScene {
   }
 
   // ============================================================================
+  // Save / Load (Real-time Persistence)
+  // ============================================================================
+
+  /**
+   * Restore party, inventory, meso, and map from localStorage.
+   * All characters are restored in idle mode with no combat target.
+   * Must be called before UI initialization in create().
+   */
+  private restoreSaveData(): void {
+    if (!hasSaveData()) {
+      console.log('[MainScene] No save data found, starting fresh');
+      return;
+    }
+
+    const data = loadGame();
+    if (data.party.length === 0) {
+      console.log('[MainScene] Save data has no characters, starting fresh');
+      return;
+    }
+
+    // Restore party characters (all in idle mode)
+    this.partyCharacters = data.party.map((saved) => toPartyCharacter(saved));
+
+    // Restore shared meso
+    const charStore = useCharacterStore.getState();
+    charStore.addMeso(data.meso - charStore.meso);
+
+    // Restore inventory
+    const invStore = useInventoryStore.getState();
+    invStore.reset();
+    for (const slot of data.equipInventory) {
+      if (slot) invStore.addItem(slot.item, slot.quantity);
+    }
+    for (const slot of data.useInventory) {
+      if (slot) invStore.addItem(slot.item, slot.quantity);
+    }
+    for (const slot of data.etcInventory) {
+      if (slot) invStore.addItem(slot.item, slot.quantity);
+    }
+
+    // Restore last map
+    if (data.lastMapId) {
+      const mapInfo = getMapById(data.lastMapId);
+      if (mapInfo) {
+        this.mapInfo = mapInfo;
+      }
+    }
+
+    // Sync game store
+    const gameStore = useGameStore.getState();
+    gameStore.setCurrentMap(this.mapInfo?.id ?? null);
+
+    console.log(
+      `[MainScene] Save data restored: [party]=[${this.partyCharacters.length}] [meso]=[${data.meso}] [map]=[${this.mapInfo?.name ?? 'unknown'}]`
+    );
+  }
+
+  /**
+   * Collect current game state and persist to localStorage
+   */
+  private saveCurrentState(): void {
+    const activeCharacters = this.partyCharacters.filter(
+      (c): c is PartyCharacter => c !== null
+    );
+
+    // Nothing to save if no characters exist
+    if (activeCharacters.length === 0) return;
+
+    const invStore = useInventoryStore.getState();
+    const charStore = useCharacterStore.getState();
+
+    const isSaved = saveGame({
+      party: activeCharacters.map((c) => toSavedCharacter(c)),
+      meso: charStore.meso,
+      lastMapId: this.mapInfo?.id ?? DEFAULT_MAP_ID,
+      equipInventory: invStore.equipInventory.filter(
+        (slot): slot is import('@/types/item').InventorySlot => slot !== null
+      ),
+      useInventory: invStore.useInventory.filter(
+        (slot): slot is import('@/types/item').InventorySlot => slot !== null
+      ),
+      etcInventory: invStore.etcInventory.filter(
+        (slot): slot is import('@/types/item').InventorySlot => slot !== null
+      ),
+    });
+
+    if (isSaved) {
+      console.log(`[MainScene] Auto-saved: [party]=[${activeCharacters.length}] [meso]=[${charStore.meso}]`);
+    }
+  }
+
+  /**
+   * Start periodic auto-save (every AUTO_SAVE_INTERVAL ms)
+   */
+  private startAutoSave(): void {
+    this.autoSaveTimer = setInterval(() => {
+      this.saveCurrentState();
+    }, GAME_CONFIG.AUTO_SAVE_INTERVAL);
+  }
+
+  /**
+   * Stop periodic auto-save timer
+   */
+  private stopAutoSave(): void {
+    if (this.autoSaveTimer !== null) {
+      clearInterval(this.autoSaveTimer);
+      this.autoSaveTimer = null;
+    }
+  }
+
+  // ============================================================================
   // Cleanup
   // ============================================================================
 
   async destroy(): Promise<void> {
+    // Stop auto-save and persist final state
+    this.stopAutoSave();
+    this.saveCurrentState();
+
     // Cancel pending divider animation
     this.isDividerAnimating = false;
 

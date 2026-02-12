@@ -19,605 +19,34 @@
  *   npx tsx fetch-items.ts --type=use --limit=50     # 소비 아이템 50개
  */
 
-import * as fs from 'fs';
 import * as path from 'path';
 import * as mysql from 'mysql2/promise';
-
-// ============================================================================
-// Types
-// ============================================================================
-
-interface DbItemRow {
-  itemid: number;
-  name: string | null;
-  msg: string | null;
-  desc: string | null;
-  slotMax: number;
-  price: string;
-  wholePrice: number;
-  karma: number;
-  questId: number;
-}
-
-interface DbEquipStat {
-  key: string;
-  value: number;
-}
-
-interface ApiItemResponse {
-  id: number;
-  description: {
-    name: string;
-    description: string;
-  };
-  metaInfo: {
-    price?: number;
-    reqLevel?: number;
-    reqJob?: number;
-    slotMax?: number;
-    tuc?: number;
-    cash: boolean;
-    only?: boolean;
-    quest?: boolean;
-    tradeBlock?: boolean;
-    notSale?: boolean;
-    incSTR?: number;
-    incDEX?: number;
-    incINT?: number;
-    incLUK?: number;
-    incPAD?: number;
-    incMAD?: number;
-    incPDD?: number;
-    incMDD?: number;
-    incEVA?: number;
-    incACC?: number;
-    incSpeed?: number;
-    incJump?: number;
-    incMHP?: number;
-    incMMP?: number;
-  };
-  typeInfo: {
-    overallCategory: string;
-    category: string;
-    subCategory: string;
-  };
-}
-
-interface WzNode {
-  children: string[];
-  type: number;
-  value?: number | string;
-}
-
-type ItemType = 'equip' | 'use' | 'setup' | 'etc' | 'cash';
-
-// 소비 아이템 효과 타입
-interface UseEffect {
-  // 포션 효과
-  hp?: number; // HP 고정 회복
-  mp?: number; // MP 고정 회복
-  hpR?: number; // HP % 회복
-  mpR?: number; // MP % 회복
-  // 버프 효과
-  pad?: number; // 공격력 증가
-  mad?: number; // 마력 증가
-  pdd?: number; // 물리 방어력 증가
-  mdd?: number; // 마법 방어력 증가
-  acc?: number; // 명중 증가
-  eva?: number; // 회피 증가
-  speed?: number; // 이동속도 증가
-  jump?: number; // 점프력 증가
-  time?: number; // 지속시간 (ms)
-  // 주문서 효과
-  success?: number; // 성공률 (%)
-  incSTR?: number;
-  incDEX?: number;
-  incINT?: number;
-  incLUK?: number;
-  incPAD?: number;
-  incMAD?: number;
-  incPDD?: number;
-  incMDD?: number;
-  incACC?: number;
-  incEVA?: number;
-  incMHP?: number;
-  incMMP?: number;
-  incSpeed?: number;
-  incJump?: number;
-  // 투사체 (표창/화살)
-  attackPower?: number; // 공격력
-}
-
-interface ItemData {
-  id: number;
-  name: string;
-  nameEn?: string;
-  description: string;
-  type: ItemType;
-  category: string;
-  subCategory?: string;
-  slot?: string;
-  rarity: string;
-  price: number;
-  sellable: boolean;
-  tradeable: boolean;
-  stackSize: number;
-  upgradeSlots?: number;
-  only?: boolean;
-  quest?: boolean;
-  isCash?: boolean;
-  requiredLevel?: number;
-  requiredJob?: number;
-  icon?: string;
-  stats?: Record<string, number>;
-  effect?: UseEffect; // 소비 아이템 효과
-}
-
-// ============================================================================
-// Constants
-// ============================================================================
-
-const DB_CONFIG = {
-  host: '127.0.0.1',
-  port: 3306,
-  user: 'root',
-  password: 'root',
-  database: 'maplestory'
-};
-
-const API_BASE_URL = 'https://maplestory.io/api/gms/62/item';
-const WZ_API_BASE_URL = 'https://maplestory.io/api/wz/gms/62/Item/Consume';
-const ITEMS_DIR = './src/data/items';
-
-// ============================================================================
-// Helper Functions - Type/Category from API
-// ============================================================================
-
-function determineItemTypeFromApi(typeInfo: ApiItemResponse['typeInfo']): ItemType {
-  const { overallCategory } = typeInfo;
-
-  switch (overallCategory) {
-    case 'Equip':
-      return 'equip';
-    case 'Use':
-      return 'use';
-    case 'Setup':
-      return 'setup';
-    case 'Cash':
-      return 'cash';
-    default:
-      return 'etc';
-  }
-}
-
-function determineCategoryFromApi(
-  typeInfo: ApiItemResponse['typeInfo'],
-  itemType: ItemType
-): { category: string; subCategory?: string; slot?: string } {
-  const { category, subCategory } = typeInfo;
-
-  // Equip
-  if (itemType === 'equip') {
-    if (
-      category === 'Weapon' ||
-      category === 'One-Handed Weapon' ||
-      category === 'Two-Handed Weapon' ||
-      category.includes('Weapon')
-    ) {
-      if (category === 'Secondary Weapon') {
-        return { category: 'secondary', subCategory, slot: 'secondary' };
-      }
-      return { category: 'weapon', subCategory, slot: 'weapon' };
-    }
-
-    if (category === 'Armor') {
-      if (subCategory === 'Hat') return { category: 'hat', subCategory, slot: 'hat' };
-      if (subCategory === 'Top') return { category: 'armor', subCategory, slot: 'top' };
-      if (subCategory === 'Bottom') return { category: 'armor', subCategory, slot: 'bottom' };
-      if (subCategory === 'Overall') return { category: 'armor', subCategory, slot: 'overall' };
-      if (subCategory === 'Glove') return { category: 'glove', subCategory, slot: 'glove' };
-      if (subCategory === 'Shoes') return { category: 'shoes', subCategory, slot: 'shoes' };
-      if (subCategory === 'Cape') return { category: 'cape', subCategory, slot: 'cape' };
-      if (subCategory === 'Shield') return { category: 'shield', subCategory, slot: 'shield' };
-      return { category: 'armor', subCategory, slot: 'armor' };
-    }
-
-    if (category === 'Accessory') {
-      if (subCategory === 'Ring') return { category: 'ring', subCategory, slot: 'ring' };
-      if (subCategory === 'Pendant') return { category: 'pendant', subCategory, slot: 'pendant' };
-      if (subCategory === 'Belt') return { category: 'belt', subCategory, slot: 'belt' };
-      if (subCategory === 'Earring' || subCategory === 'Earrings')
-        return { category: 'earring', subCategory, slot: 'earring' };
-      if (subCategory === 'Face Accessory') return { category: 'face', subCategory, slot: 'face' };
-      if (subCategory === 'Eye Decoration' || subCategory === 'Eye Accessory')
-        return { category: 'eye', subCategory, slot: 'eye' };
-      if (subCategory === 'Shoulder Accessory')
-        return { category: 'shoulder', subCategory, slot: 'shoulder' };
-      if (subCategory === 'Medal') return { category: 'medal', subCategory, slot: 'medal' };
-      if (subCategory === 'Badge') return { category: 'badge', subCategory, slot: 'badge' };
-      if (subCategory === 'Pocket Item') return { category: 'pocket', subCategory, slot: 'pocket' };
-      return { category: 'accessory', subCategory, slot: 'accessory' };
-    }
-
-    return { category: 'accessory', subCategory };
-  }
-
-  // Use
-  if (itemType === 'use') {
-    if (subCategory === 'Potion') return { category: 'potion', subCategory };
-    if (subCategory === 'Food and Drink' || subCategory === 'Food')
-      return { category: 'food', subCategory };
-    if (subCategory === 'Arrow' || subCategory === 'Crossbow Bolt')
-      return { category: 'projectile', subCategory };
-    if (subCategory === 'Thrown' || subCategory === 'Bullet')
-      return { category: 'projectile', subCategory };
-    if (category && category.includes('Scroll')) return { category: 'scroll', subCategory };
-    if (category === 'Special Scroll') return { category: 'scroll', subCategory };
-    if (subCategory === 'Mastery Book') return { category: 'mastery-book', subCategory };
-    if (category === 'Recipe') return { category: 'recipe', subCategory };
-    if (category === 'Projectile') return { category: 'projectile', subCategory };
-    return { category: 'consumable', subCategory };
-  }
-
-  // Setup
-  if (itemType === 'setup') {
-    if (subCategory === 'Chair') return { category: 'chair', subCategory };
-    if (subCategory === 'Title') return { category: 'title', subCategory };
-    if (category === 'Nebulite') return { category: 'nebulite', subCategory };
-    return { category: 'setup', subCategory };
-  }
-
-  // Cash
-  if (itemType === 'cash') {
-    if (category === 'Pet') return { category: 'pet', subCategory };
-    if (category === 'Appearance') return { category: 'appearance', subCategory };
-    if (category === 'Random Reward') return { category: 'gacha', subCategory };
-    return { category: 'cash', subCategory };
-  }
-
-  // Etc
-  if (subCategory === 'Monster Drop') return { category: 'monster-drop', subCategory };
-  if (subCategory === 'Mineral Ore' || subCategory === 'Ore') return { category: 'ore', subCategory };
-  if (subCategory === 'Rare Ore') return { category: 'ore', subCategory };
-  if (subCategory === 'Mineral Processed') return { category: 'mineral', subCategory };
-  if (subCategory === 'Rare Processed Ore') return { category: 'jewel', subCategory };
-  if (subCategory === 'Herb') return { category: 'herb', subCategory };
-  if (subCategory === 'Herb Oil') return { category: 'oil', subCategory };
-  if (category === 'Crafting') return { category: 'material', subCategory };
-  if (subCategory === 'Quest Item') return { category: 'quest', subCategory };
-  if (subCategory === 'Coin') return { category: 'coin', subCategory };
-
-  return { category: 'other', subCategory };
-}
-
-// Fallback: ID 기반 타입 결정 (API 실패 시)
-function determineItemTypeFromId(itemId: number): ItemType {
-  if (itemId >= 1000000 && itemId < 2000000) return 'equip';
-  if (itemId >= 2000000 && itemId < 3000000) return 'use';
-  if (itemId >= 3000000 && itemId < 4000000) return 'setup';
-  if (itemId >= 4000000 && itemId < 5000000) return 'etc';
-  if (itemId >= 5000000) return 'cash';
-  return 'etc';
-}
-
-// Fallback: ID 기반 카테고리 결정 (API 실패 시)
-function determineCategoryFromId(itemId: number): { category: string; slot?: string } {
-  const prefix = Math.floor(itemId / 10000);
-
-  // Equip
-  if (itemId >= 1000000 && itemId < 2000000) {
-    if (prefix >= 100 && prefix <= 104) return { category: 'hat', slot: 'hat' };
-    if (prefix === 105) return { category: 'armor', slot: 'overall' };
-    if (prefix === 106) return { category: 'armor', slot: 'bottom' };
-    if (prefix === 107) return { category: 'shoes', slot: 'shoes' };
-    if (prefix === 108) return { category: 'glove', slot: 'glove' };
-    if (prefix === 109) return { category: 'shield', slot: 'shield' };
-    if (prefix === 110) return { category: 'cape', slot: 'cape' };
-    if (prefix >= 130 && prefix <= 170) return { category: 'weapon', slot: 'weapon' };
-    return { category: 'accessory', slot: 'accessory' };
-  }
-
-  // Use
-  if (itemId >= 2000000 && itemId < 3000000) {
-    if (prefix >= 200 && prefix <= 201) return { category: 'potion' };
-    if (prefix === 204) return { category: 'scroll' };
-    if (prefix === 206 || prefix === 207) return { category: 'projectile' };
-    return { category: 'consumable' };
-  }
-
-  // Setup
-  if (itemId >= 3000000 && itemId < 4000000) {
-    if (prefix === 301) return { category: 'chair' };
-    return { category: 'setup' };
-  }
-
-  // Etc
-  if (itemId >= 4000000 && itemId < 5000000) {
-    if (prefix === 400) return { category: 'monster-drop' };
-    if (prefix === 401) return { category: 'ore' };
-    if (prefix === 402) return { category: 'jewel' };
-    return { category: 'other' };
-  }
-
-  // Cash
-  if (itemId >= 5000000) {
-    return { category: 'cash' };
-  }
-
-  return { category: 'other' };
-}
-
-function getIconUrl(itemId: number): string {
-  return `https://maplestory.io/api/gms/62/item/${itemId}/icon`;
-}
-
-function generateFilename(itemId: number, englishName: string): string {
-  const safeName = (englishName || 'unknown')
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '');
-
-  return `${itemId}_${safeName || 'unknown'}.json`;
-}
-
-// WZ 파일 경로 계산 (아이템 ID 기반)
-function getWzPath(itemId: number): string {
-  // 2000001 -> 0200.img/02000001
-  const prefix = Math.floor(itemId / 10000)
-    .toString()
-    .padStart(4, '0');
-  const fullId = itemId.toString().padStart(8, '0');
-  return `${prefix}.img/${fullId}`;
-}
-
-// ============================================================================
-// API Functions
-// ============================================================================
-
-async function fetchFromApi(itemId: number): Promise<ApiItemResponse | null> {
-  try {
-    const url = `${API_BASE_URL}/${itemId}`;
-    const response = await fetch(url);
-
-    if (!response.ok) {
-      return null;
-    }
-
-    return await response.json();
-  } catch {
-    return null;
-  }
-}
-
-// ============================================================================
-// WZ API Functions (소비 아이템 효과)
-// ============================================================================
-
-async function fetchWzNode(path: string): Promise<WzNode | null> {
-  try {
-    const url = `${WZ_API_BASE_URL}/${path}`;
-    const response = await fetch(url);
-
-    if (!response.ok) {
-      return null;
-    }
-
-    return await response.json();
-  } catch {
-    return null;
-  }
-}
-
-async function fetchWzValue(path: string): Promise<number | null> {
-  const node = await fetchWzNode(path);
-  if (node && node.value != null && typeof node.value === 'number') {
-    return node.value;
-  }
-  return null;
-}
-
-async function fetchUseItemEffect(itemId: number): Promise<UseEffect | null> {
-  const wzPath = getWzPath(itemId);
-  const effect: UseEffect = {};
-  let hasEffect = false;
-
-  // 1. spec 노드 확인 (포션 효과)
-  const specNode = await fetchWzNode(`${wzPath}/spec`);
-  if (specNode && specNode.children.length > 0) {
-    const specFields = [
-      { key: 'hp', field: 'hp' },
-      { key: 'mp', field: 'mp' },
-      { key: 'hpR', field: 'hpR' },
-      { key: 'mpR', field: 'mpR' },
-      { key: 'pad', field: 'pad' },
-      { key: 'mad', field: 'mad' },
-      { key: 'pdd', field: 'pdd' },
-      { key: 'mdd', field: 'mdd' },
-      { key: 'acc', field: 'acc' },
-      { key: 'eva', field: 'eva' },
-      { key: 'speed', field: 'speed' },
-      { key: 'jump', field: 'jump' },
-      { key: 'time', field: 'time' }
-    ];
-
-    for (const { key, field } of specFields) {
-      if (specNode.children.includes(key)) {
-        const value = await fetchWzValue(`${wzPath}/spec/${key}`);
-        if (value != null) {
-          (effect as Record<string, number>)[field] = value;
-          hasEffect = true;
-        }
-      }
-    }
-  }
-
-  // 2. info 노드 확인 (주문서/투사체 효과)
-  const infoNode = await fetchWzNode(`${wzPath}/info`);
-  if (infoNode && infoNode.children.length > 0) {
-    const infoFields = [
-      { key: 'success', field: 'success' },
-      { key: 'incSTR', field: 'incSTR' },
-      { key: 'incDEX', field: 'incDEX' },
-      { key: 'incINT', field: 'incINT' },
-      { key: 'incLUK', field: 'incLUK' },
-      { key: 'incPAD', field: 'incPAD' },
-      { key: 'incMAD', field: 'incMAD' },
-      { key: 'incPDD', field: 'incPDD' },
-      { key: 'incMDD', field: 'incMDD' },
-      { key: 'incACC', field: 'incACC' },
-      { key: 'incEVA', field: 'incEVA' },
-      { key: 'incMHP', field: 'incMHP' },
-      { key: 'incMMP', field: 'incMMP' },
-      { key: 'incSpeed', field: 'incSpeed' },
-      { key: 'incJump', field: 'incJump' }
-    ];
-
-    for (const { key, field } of infoFields) {
-      if (infoNode.children.includes(key)) {
-        const value = await fetchWzValue(`${wzPath}/info/${key}`);
-        if (value != null) {
-          (effect as Record<string, number>)[field] = value;
-          hasEffect = true;
-        }
-      }
-    }
-
-    // 투사체 공격력 (incPAD를 attackPower로 복사)
-    if (effect.incPAD && !effect.success) {
-      effect.attackPower = effect.incPAD;
-      delete effect.incPAD;
-    }
-  }
-
-  return hasEffect ? effect : null;
-}
-
-// ============================================================================
-// DB Functions
-// ============================================================================
-
-interface DbItemData {
-  name: string;
-  description: string;
-  price: number;
-  stackSize: number;
-  tradeable: boolean;
-  questId: number;
-  stats?: Record<string, number>;
-  upgradeSlots?: number;
-  requiredLevel?: number;
-  requiredJob?: number;
-  isCash?: boolean;
-}
-
-async function fetchFromDb(conn: mysql.Connection, itemId: number): Promise<DbItemData | null> {
-  const [rows] = await conn.query<mysql.RowDataPacket[]>(
-    'SELECT * FROM wz_itemdata WHERE itemid = ?',
-    [itemId]
-  );
-
-  if (rows.length === 0) {
-    return null;
-  }
-
-  const dbItem = rows[0] as DbItemRow;
-  const itemType = determineItemTypeFromId(itemId);
-
-  const result: DbItemData = {
-    name: dbItem.name || '',
-    description: (dbItem.desc || '').replace(/\\n/g, ' ').replace(/\\r/g, ''),
-    price: dbItem.wholePrice || 0,
-    stackSize: itemType === 'equip' ? 1 : dbItem.slotMax || 100,
-    tradeable: dbItem.karma !== 1,
-    questId: dbItem.questId || 0
-  };
-
-  // 장비 스탯 조회 (장비 아이템만)
-  if (itemType === 'equip') {
-    const [statRows] = await conn.query<mysql.RowDataPacket[]>(
-      'SELECT `key`, value FROM wz_itemequipdata WHERE itemid = ?',
-      [itemId]
-    );
-
-    const stats: Record<string, number> = {};
-    const statMapping: Record<string, string> = {
-      STR: 'incSTR',
-      DEX: 'incDEX',
-      INT: 'incINT',
-      LUK: 'incLUK',
-      PAD: 'incPAD',
-      MAD: 'incMAD',
-      PDD: 'incPDD',
-      MDD: 'incMDD',
-      ACC: 'incACC',
-      EVA: 'incEVA',
-      MHP: 'incMHP',
-      MMP: 'incMMP',
-      Speed: 'incSpeed',
-      Jump: 'incJump'
-    };
-
-    for (const row of statRows as DbEquipStat[]) {
-      if (row.key === 'tuc') {
-        result.upgradeSlots = row.value;
-      } else if (row.key === 'reqLevel') {
-        result.requiredLevel = row.value;
-      } else if (row.key === 'reqJob') {
-        result.requiredJob = row.value;
-      } else if (row.key === 'cash' && row.value === 1) {
-        result.isCash = true;
-      } else if (statMapping[row.key]) {
-        stats[statMapping[row.key]] = row.value;
-      }
-    }
-
-    if (Object.keys(stats).length > 0) {
-      result.stats = stats;
-    }
-  }
-
-  return result;
-}
-
-async function fetchItemIdsFromDb(
-  conn: mysql.Connection,
-  options: {
-    type?: ItemType;
-    range?: { min: number; max: number };
-    limit?: number;
-  }
-): Promise<number[]> {
-  let query = "SELECT itemid FROM wz_itemdata WHERE name IS NOT NULL AND name != ''";
-  const params: (number | string)[] = [];
-
-  if (options.type) {
-    const typeRanges: Record<ItemType, [number, number]> = {
-      equip: [1000000, 2000000],
-      use: [2000000, 3000000],
-      setup: [3000000, 4000000],
-      etc: [4000000, 5000000],
-      cash: [5000000, 10000000]
-    };
-    const [min, max] = typeRanges[options.type];
-    query += ' AND itemid >= ? AND itemid < ?';
-    params.push(min, max);
-  }
-
-  if (options.range) {
-    query += ' AND itemid >= ? AND itemid <= ?';
-    params.push(options.range.min, options.range.max);
-  }
-
-  query += ' ORDER BY itemid';
-
-  if (options.limit) {
-    query += ' LIMIT ?';
-    params.push(options.limit);
-  }
-
-  const [rows] = await conn.query<mysql.RowDataPacket[]>(query, params);
-  return rows.map((row) => row.itemid);
-}
+import {
+  DB_CONFIG,
+  ITEMS_DIR,
+  API_STAT_FIELDS,
+  type ItemType,
+  type ItemData,
+  type DbItemData,
+  type ApiItemResponse,
+  fetchItemFromApi,
+  fetchUseItemEffect,
+  fetchItemFromDb,
+  fetchItemIdsFromDb,
+  getIconUrl,
+  delay,
+  determineItemTypeFromId,
+  determineItemTypeFromApi,
+  determineCategoryFromApi,
+  determineCategoryFromId,
+  determineSlotFromId,
+  getApiItemName,
+  getApiItemDescription,
+  generateFilename,
+  ensureDir,
+  saveJson,
+  fileExists,
+} from './scripts/lib/index.js';
 
 // ============================================================================
 // Merge Logic: DB + API + WZ
@@ -625,15 +54,14 @@ async function fetchItemIdsFromDb(
 
 async function fetchAndMergeItem(
   conn: mysql.Connection,
-  itemId: number
+  itemId: number,
 ): Promise<{ itemData: ItemData; filename: string } | null> {
   // 1. DB에서 기본 데이터 가져오기
-  const dbData = await fetchFromDb(conn, itemId);
+  const dbData = await fetchItemFromDb(itemId, conn);
 
   // 2. API에서 분류/영문명 가져오기
-  const apiData = await fetchFromApi(itemId);
+  const apiData = await fetchItemFromApi(itemId);
 
-  // 둘 다 없으면 실패
   if (!dbData && !apiData) {
     return null;
   }
@@ -644,7 +72,7 @@ async function fetchAndMergeItem(
   let subCategory: string | undefined;
   let slot: string | undefined;
 
-  if (apiData) {
+  if (apiData?.typeInfo) {
     itemType = determineItemTypeFromApi(apiData.typeInfo);
     const categoryInfo = determineCategoryFromApi(apiData.typeInfo, itemType);
     category = categoryInfo.category;
@@ -658,21 +86,21 @@ async function fetchAndMergeItem(
   }
 
   // 4. 영문 이름 (API에서, 없으면 빈 문자열)
-  const englishName = apiData?.description.name || '';
+  const englishName = getApiItemName(apiData) || '';
 
   // 5. 데이터 병합 (DB 우선)
   const itemData: ItemData = {
     id: itemId,
-    name: dbData?.name || apiData?.description.name || '',
-    description: dbData?.description || apiData?.description.description?.replace(/\\n/g, ' ') || '',
+    name: dbData?.name || getApiItemName(apiData) || '',
+    description: dbData?.description || getApiItemDescription(apiData)?.replace(/\\n/g, ' ') || '',
     type: itemType,
     category,
     rarity: 'common',
-    price: dbData?.price ?? apiData?.metaInfo.price ?? 0,
-    sellable: apiData ? apiData.metaInfo.notSale !== true : true,
-    tradeable: dbData?.tradeable ?? (apiData ? apiData.metaInfo.tradeBlock !== true : true),
-    stackSize: dbData?.stackSize ?? (itemType === 'equip' ? 1 : apiData?.metaInfo.slotMax ?? 100),
-    icon: getIconUrl(itemId)
+    price: dbData?.price ?? apiData?.metaInfo?.price ?? 0,
+    sellable: apiData ? apiData.metaInfo?.notSale !== true : true,
+    tradeable: dbData?.tradeable ?? (apiData ? apiData.metaInfo?.tradeBlock !== true : true),
+    stackSize: dbData?.stackSize ?? (itemType === 'equip' ? 1 : apiData?.metaInfo?.slotMax ?? 100),
+    icon: getIconUrl(itemId),
   };
 
   // 영문 이름 추가 (한글과 다를 경우)
@@ -680,45 +108,43 @@ async function fetchAndMergeItem(
     itemData.nameEn = englishName;
   }
 
-  // subCategory
   if (subCategory) {
     itemData.subCategory = subCategory;
   }
 
-  // slot
   if (slot) {
     itemData.slot = slot;
   }
 
   // upgradeSlots (DB 우선, API fallback)
-  const upgradeSlots = dbData?.upgradeSlots ?? apiData?.metaInfo.tuc;
+  const upgradeSlots = dbData?.upgradeSlots ?? apiData?.metaInfo?.tuc;
   if (upgradeSlots != null && upgradeSlots > 0) {
     itemData.upgradeSlots = upgradeSlots;
   }
 
   // only (API)
-  if (apiData?.metaInfo.only === true) {
+  if (apiData?.metaInfo?.only === true) {
     itemData.only = true;
   }
 
   // quest (DB 우선, API fallback)
-  if ((dbData?.questId && dbData.questId > 0) || apiData?.metaInfo.quest === true) {
+  if ((dbData?.questId && dbData.questId > 0) || apiData?.metaInfo?.quest === true) {
     itemData.quest = true;
   }
 
   // isCash (DB 우선, API fallback)
-  if (dbData?.isCash === true || apiData?.metaInfo.cash === true) {
+  if (dbData?.isCash === true || apiData?.metaInfo?.cash === true) {
     itemData.isCash = true;
   }
 
   // requiredLevel (DB 우선, API fallback)
-  const reqLevel = dbData?.requiredLevel ?? apiData?.metaInfo.reqLevel;
+  const reqLevel = dbData?.requiredLevel ?? apiData?.metaInfo?.reqLevel;
   if (reqLevel != null && reqLevel > 0) {
     itemData.requiredLevel = reqLevel;
   }
 
   // requiredJob (DB 우선, API fallback)
-  const reqJob = dbData?.requiredJob ?? apiData?.metaInfo.reqJob;
+  const reqJob = dbData?.requiredJob ?? apiData?.metaInfo?.reqJob;
   if (reqJob != null) {
     itemData.requiredJob = reqJob;
   }
@@ -726,27 +152,11 @@ async function fetchAndMergeItem(
   // stats (장비 아이템: DB 우선, API fallback)
   if (itemType === 'equip') {
     let stats = dbData?.stats;
-    if (!stats && apiData) {
+    if (!stats && apiData?.metaInfo) {
       const apiStats: Record<string, number> = {};
-      const statFields = [
-        'incSTR',
-        'incDEX',
-        'incINT',
-        'incLUK',
-        'incPAD',
-        'incMAD',
-        'incPDD',
-        'incMDD',
-        'incACC',
-        'incEVA',
-        'incSpeed',
-        'incJump',
-        'incMHP',
-        'incMMP'
-      ];
 
-      statFields.forEach((field) => {
-        const value = apiData.metaInfo[field as keyof typeof apiData.metaInfo] as number | undefined;
+      API_STAT_FIELDS.forEach((field) => {
+        const value = apiData.metaInfo?.[field as keyof NonNullable<ApiItemResponse['metaInfo']>] as number | undefined;
         if (value != null && value !== 0) {
           apiStats[field] = value;
         }
@@ -777,33 +187,114 @@ async function fetchAndMergeItem(
 }
 
 // ============================================================================
-// File Operations
+// Public API - processItem (used by fetch-map-all.ts)
 // ============================================================================
 
-function itemFileExists(itemId: number): boolean {
-  const type = determineItemTypeFromId(itemId);
-  const typeFolder = path.join(ITEMS_DIR, type);
-  if (!fs.existsSync(typeFolder)) return false;
+/**
+ * 단일 아이템을 처리한다: API + DB 조회 -> 병합 -> 저장
+ * fetch-map-all.ts에서 재사용한다.
+ *
+ * @param itemId - 아이템 ID
+ * @param conn - 외부에서 전달된 DB 커넥션 (없으면 내부 싱글턴 사용)
+ * @returns 성공 여부
+ */
+export async function processItem(itemId: number, conn?: mysql.Connection): Promise<boolean> {
+  const [apiData, dbData] = await Promise.all([
+    fetchItemFromApi(itemId),
+    fetchItemFromDb(itemId, conn),
+  ]);
 
-  const files = fs.readdirSync(typeFolder);
-  return files.some((f) => f.startsWith(`${itemId}_`) && f.endsWith('.json'));
-}
-
-function saveItemData(itemData: ItemData, filename: string): string {
-  const typeFolder = path.join(ITEMS_DIR, itemData.type);
-
-  if (!fs.existsSync(typeFolder)) {
-    fs.mkdirSync(typeFolder, { recursive: true });
+  if (!apiData && !dbData) {
+    return false;
   }
 
-  const outputPath = path.join(typeFolder, filename);
-  fs.writeFileSync(outputPath, JSON.stringify(itemData, null, 2) + '\n', 'utf8');
+  const apiName = getApiItemName(apiData);
+  const apiDesc = getApiItemDescription(apiData);
 
-  return outputPath;
+  // 타입/카테고리/슬롯 결정 (API 우선, ID fallback)
+  let itemType: ItemType;
+  let category: string;
+  let subCategory: string | undefined;
+  let slot: string | undefined;
+
+  if (apiData?.typeInfo) {
+    itemType = determineItemTypeFromApi(apiData.typeInfo);
+    const categoryInfo = determineCategoryFromApi(apiData.typeInfo, itemType);
+    category = categoryInfo.category;
+    subCategory = categoryInfo.subCategory;
+    slot = categoryInfo.slot;
+  } else {
+    itemType = determineItemTypeFromId(itemId);
+    const categoryInfo = determineCategoryFromId(itemId);
+    category = categoryInfo.category;
+    slot = categoryInfo.slot;
+  }
+
+  const itemData: ItemData = {
+    id: itemId,
+    name: dbData?.name || apiName || `Item ${itemId}`,
+    description: dbData?.description || apiDesc || '',
+    type: itemType,
+    category,
+    rarity: 'common',
+    price: dbData?.price || 0,
+    sellable: true,
+    tradeable: true,
+    stackSize: itemType === 'equip' ? 1 : 100,
+    icon: getIconUrl(itemId),
+  };
+
+  if (apiName) itemData.nameEn = apiName;
+  if (subCategory) itemData.subCategory = subCategory;
+  if (slot) itemData.slot = slot;
+
+  // 장비 아이템: 스탯/upgradeSlots/requiredLevel (DB 우선, API fallback)
+  if (itemType === 'equip') {
+    let stats = dbData?.stats;
+    if (!stats && apiData?.metaInfo) {
+      const apiStats: Record<string, number> = {};
+      API_STAT_FIELDS.forEach((field) => {
+        const value = apiData.metaInfo?.[field as keyof NonNullable<ApiItemResponse['metaInfo']>] as number | undefined;
+        if (value != null && value !== 0) {
+          apiStats[field] = value;
+        }
+      });
+      if (Object.keys(apiStats).length > 0) {
+        stats = apiStats;
+      }
+    }
+    if (stats) itemData.stats = stats;
+
+    const upgradeSlots = dbData?.upgradeSlots ?? apiData?.metaInfo?.tuc;
+    if (upgradeSlots != null && upgradeSlots > 0) itemData.upgradeSlots = upgradeSlots;
+
+    const reqLevel = dbData?.requiredLevel ?? apiData?.metaInfo?.reqLevel;
+    if (reqLevel != null && reqLevel > 0) itemData.requiredLevel = reqLevel;
+
+    const reqJob = dbData?.requiredJob ?? apiData?.metaInfo?.reqJob;
+    if (reqJob != null) itemData.requiredJob = reqJob;
+  }
+
+  // 소비 아이템 효과 (WZ API)
+  if (itemType === 'use') {
+    const effect = await fetchUseItemEffect(itemId);
+    if (effect) itemData.effect = effect;
+  }
+
+  // 저장
+  const typeFolder = path.join(ITEMS_DIR, itemType);
+  ensureDir(typeFolder);
+  const filename = generateFilename(itemId, apiName || itemData.name);
+  const outputPath = path.join(typeFolder, filename);
+  saveJson(outputPath, itemData as unknown as Record<string, unknown>, true);
+
+  console.log(`  [Item] ${itemId} ${itemData.name} -> ${outputPath}`);
+
+  return true;
 }
 
 // ============================================================================
-// Main
+// Main (CLI)
 // ============================================================================
 
 async function main() {
@@ -885,11 +376,11 @@ async function main() {
     if (itemIds.length > 0) {
       targetIds = itemIds;
     } else {
-      targetIds = await fetchItemIdsFromDb(conn, {
+      targetIds = await fetchItemIdsFromDb({
         type: itemType,
         range,
-        limit: fetchAll ? undefined : limit
-      });
+        limit: fetchAll ? undefined : limit,
+      }, conn);
     }
 
     console.log(`대상 아이템: ${targetIds.length}개\n`);
@@ -910,20 +401,25 @@ async function main() {
     let skippedCount = 0;
 
     for (let i = 0; i < targetIds.length; i++) {
-      const itemId = targetIds[i];
+      const id = targetIds[i];
+      const itemTypeForId = determineItemTypeFromId(id);
+      const typeFolder = path.join(ITEMS_DIR, itemTypeForId);
 
-      // 기존 파일 스킵
-      if (skipExisting && itemFileExists(itemId)) {
+      if (skipExisting && fileExists(typeFolder, id)) {
         skippedCount++;
         continue;
       }
 
       try {
-        const result = await fetchAndMergeItem(conn, itemId);
+        // CLI 모드에서는 fetchAndMergeItem을 사용 (더 상세한 병합)
+        const result = await fetchAndMergeItem(conn!, id);
 
         if (result) {
           const { itemData, filename } = result;
-          const outputPath = saveItemData(itemData, filename);
+          const outFolder = path.join(ITEMS_DIR, itemData.type);
+          ensureDir(outFolder);
+          const outputPath = path.join(outFolder, filename);
+          saveJson(outputPath, itemData as unknown as Record<string, unknown>, true);
           successCount++;
 
           if (itemData.effect) {
@@ -934,17 +430,17 @@ async function main() {
             console.log(`진행: ${i + 1}/${targetIds.length}`);
           } else if (targetIds.length <= 100) {
             const effectStr = itemData.effect ? ' [effect]' : '';
-            console.log(`[${itemId}] ${itemData.name}${effectStr} -> ${outputPath}`);
+            console.log(`[${id}] ${itemData.name}${effectStr} -> ${outputPath}`);
           }
         } else {
           failCount++;
-          console.log(`[${itemId}] 데이터 없음 (DB/API 모두 실패)`);
+          console.log(`[${id}] 데이터 없음 (DB/API 모두 실패)`);
         }
 
-        await new Promise((resolve) => setTimeout(resolve, 300));
+        await delay(300);
       } catch (error) {
         failCount++;
-        console.error(`[${itemId}] 오류:`, error instanceof Error ? error.message : error);
+        console.error(`[${id}] 오류:`, error instanceof Error ? error.message : error);
       }
     }
 
@@ -963,7 +459,11 @@ async function main() {
   }
 }
 
-main().catch((error) => {
-  console.error('Fatal error:', error);
-  process.exit(1);
-});
+// CLI 직접 실행 시에만 main 호출 (import 시에는 실행하지 않음)
+const isDirectRun = process.argv[1]?.replace(/\.ts$/, '') === import.meta.url.replace(/^file:\/\//, '').replace(/\.ts$/, '');
+if (isDirectRun) {
+  main().catch((error) => {
+    console.error('Fatal error:', error);
+    process.exit(1);
+  });
+}

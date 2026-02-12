@@ -13,128 +13,35 @@
  *   npx tsx fetch-maps.ts --id=100000000,104010001   # 여러 ID
  */
 
-import * as fs from 'fs';
 import * as path from 'path';
+import {
+  MAPS_DIR,
+  type ApiMapSearchResult,
+  type ApiMapDetail,
+  type MapData,
+  fetchMapDetail,
+  fetchMapSearch,
+  searchMaps,
+  delay,
+  getMapMark,
+  generateFilename,
+  ensureDir,
+  saveJson,
+  fileExists,
+  loadExistingJson,
+} from './scripts/lib/index.js';
 
 // ============================================================================
-// Types
+// Map-Specific Helpers
 // ============================================================================
 
-interface ApiMapSearchResult {
-  id: number;
-  name: string;
-  streetName: string;
-}
-
-interface ApiMapDetail {
-  id?: number;
-  name?: string;
-  streetName?: string;
-  backgroundMusic?: string;
-  isTown?: boolean;
-  returnMap?: number;
-  mobs?: ApiMobSpawn[];
-  npcs?: unknown[];
-}
-
-interface ApiMobSpawn {
-  id: number;
-  mobTime?: number;
-  x?: number;
-  y?: number;
-}
-
-interface MapData {
-  id: number;
-  name: string;
-  nameEn?: string;
-  streetName: string;
-  mapMark?: string;
-  isTown?: boolean;
-  recommendedLevel?: {
-    min: number;
-    max: number;
-  };
-  bgm?: string;
-  spawns?: {
-    normal: {
-      mobs: {
-        mobId: number;
-        weight: number;
-      }[];
-    };
-  };
-}
-
-// ============================================================================
-// Constants
-// ============================================================================
-
-const API_BASE_URL = 'https://maplestory.io/api/gms/62';
-const MAPS_DIR = './src/data/maps';
-
-// 지역 마크 매핑 (streetName -> mapMark)
-const REGION_MARKS: Record<string, string> = {
-  'Victoria Road': '빅토리아 아일랜드',
-  Henesys: '헤네시스',
-  Perion: '페리온',
-  Ellinia: '엘리니아',
-  'Kerning City': '커닝시티',
-  Lith: '리스항구',
-  'Sleepywood': '슬리피우드',
-  'Ant Tunnel': '개미굴',
-  'Ossyria': '오시리아',
-  'El Nath': '엘나스',
-  'Orbis': '오르비스',
-  'Ludibrium': '루디브리움',
-  'Omega Sector': '오메가 섹터',
-  'Korean Folk Town': '코리아 타운',
-  'Aqua Road': '아쿠아리움',
-  'Mu Lung': '무릉',
-  'Herb Town': '백초마을',
-  'Nihal Desert': '니할 사막',
-  'Magatia': '마가티아'
-};
-
-// ============================================================================
-// Helper Functions
-// ============================================================================
-
-function getMapMark(streetName: string): string {
-  // 정확한 매칭
-  if (REGION_MARKS[streetName]) {
-    return REGION_MARKS[streetName];
-  }
-
-  // 부분 매칭
-  for (const [key, value] of Object.entries(REGION_MARKS)) {
-    if (streetName.includes(key) || key.includes(streetName)) {
-      return value;
-    }
-  }
-
-  return streetName;
-}
-
-function generateFilename(mapId: number, name: string): string {
-  const safeName = (name || 'unknown')
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '');
-
-  return `${mapId}_${safeName || 'unknown'}.json`;
-}
-
-function estimateRecommendedLevel(mobs: ApiMobSpawn[]): { min: number; max: number } | undefined {
+function estimateRecommendedLevel(mobs: { id: number }[]): { min: number; max: number } | undefined {
   if (!mobs || mobs.length === 0) {
     return undefined;
   }
 
-  // 몬스터 ID 범위로 추정 (정확하지 않음)
-  // 실제 레벨은 몬스터 데이터에서 가져와야 함
   const minMobId = Math.min(...mobs.map((m) => m.id));
 
-  // 대략적인 추정
   if (minMobId < 200000) return { min: 1, max: 10 };
   if (minMobId < 1000000) return { min: 5, max: 20 };
   if (minMobId < 2000000) return { min: 10, max: 30 };
@@ -144,97 +51,54 @@ function estimateRecommendedLevel(mobs: ApiMobSpawn[]): { min: number; max: numb
 }
 
 // ============================================================================
-// API Functions
-// ============================================================================
-
-async function searchMaps(query: string, count: number = 50): Promise<ApiMapSearchResult[]> {
-  const url = `${API_BASE_URL}/map?searchFor=${encodeURIComponent(query)}&count=${count}`;
-  console.log(`검색 중: ${query}`);
-
-  const response = await fetch(url);
-  if (!response.ok) {
-    throw new Error(`Search failed: ${response.status}`);
-  }
-
-  return response.json();
-}
-
-async function fetchMapDetail(mapId: number): Promise<ApiMapDetail | null> {
-  try {
-    const url = `${API_BASE_URL}/map/${mapId}`;
-    const response = await fetch(url);
-
-    if (!response.ok) {
-      return null;
-    }
-
-    return response.json();
-  } catch {
-    return null;
-  }
-}
-
-// ============================================================================
 // Conversion
 // ============================================================================
 
 function convertToMapData(
   searchResult: ApiMapSearchResult,
-  detail: ApiMapDetail | null
+  detail: ApiMapDetail | null,
 ): MapData {
   const mapData: MapData = {
     id: searchResult.id,
-    name: searchResult.name, // 영문 이름 (한글 이름은 수동으로 추가 필요)
-    streetName: getMapMark(searchResult.streetName)
+    name: searchResult.name,
+    streetName: getMapMark(searchResult.streetName),
   };
 
-  // 영문 이름 저장 (추후 한글화 시 참조용)
   if (searchResult.name) {
     mapData.nameEn = searchResult.name;
   }
 
-  // 지역 마크
   mapData.mapMark = getMapMark(searchResult.streetName);
 
-  // 상세 정보가 있으면 추가
   if (detail) {
-    // 마을 여부
     if (detail.isTown === true) {
       mapData.isTown = true;
     }
 
-    // BGM
     if (detail.backgroundMusic) {
       mapData.bgm = detail.backgroundMusic;
     }
 
-    // 몬스터 스폰 정보
     if (detail.mobs && detail.mobs.length > 0) {
-      // 몬스터별 등장 횟수 계산
       const mobCounts: Record<number, number> = {};
       for (const mob of detail.mobs) {
         mobCounts[mob.id] = (mobCounts[mob.id] || 0) + 1;
       }
 
-      // 총 스폰 수
       const totalSpawns = detail.mobs.length;
-
-      // weight 계산 (등장 비율 * 100)
       const mobWeights = Object.entries(mobCounts).map(([id, count]) => ({
         mobId: parseInt(id, 10),
-        weight: Math.round((count / totalSpawns) * 100)
+        weight: Math.round((count / totalSpawns) * 100),
       }));
 
-      // weight 순으로 정렬
       mobWeights.sort((a, b) => b.weight - a.weight);
 
       mapData.spawns = {
         normal: {
-          mobs: mobWeights
-        }
+          mobs: mobWeights,
+        },
       };
 
-      // 추천 레벨 추정
       const recommendedLevel = estimateRecommendedLevel(detail.mobs);
       if (recommendedLevel) {
         mapData.recommendedLevel = recommendedLevel;
@@ -246,30 +110,61 @@ function convertToMapData(
 }
 
 // ============================================================================
-// File Operations
+// Public API - processMap (used by fetch-map-all.ts)
 // ============================================================================
 
-function mapFileExists(mapId: number): boolean {
-  if (!fs.existsSync(MAPS_DIR)) return false;
-  const files = fs.readdirSync(MAPS_DIR);
-  return files.some((f) => f.startsWith(`${mapId}_`) && f.endsWith('.json'));
-}
+/**
+ * 단일 맵을 처리한다: 기존 파일 확인 -> API 조회 -> 변환 -> 저장
+ * fetch-map-all.ts에서 재사용한다.
+ *
+ * @param mapId - 맵 ID
+ * @returns 맵 데이터와 해당 맵에 스폰되는 몬스터 ID 목록
+ */
+export async function processMap(mapId: number): Promise<{ mapData: MapData | null; mobIds: number[] }> {
+  console.log(`\n[Map] ${mapId} 처리 중...`);
 
-function saveMapData(mapData: MapData): string {
-  if (!fs.existsSync(MAPS_DIR)) {
-    fs.mkdirSync(MAPS_DIR, { recursive: true });
+  // 1. 기존 파일에서 몬스터 정보 확인
+  const existingMap = loadExistingJson<MapData>(MAPS_DIR, mapId);
+  if (existingMap && existingMap.spawns && existingMap.spawns.normal.mobs.length > 0) {
+    const mobIds = existingMap.spawns.normal.mobs.map((m) => m.mobId);
+    console.log(`  [Map] ${mapId} 기존 파일 사용 (몬스터: ${mobIds.length}개)`);
+    return { mapData: existingMap, mobIds };
   }
 
+  // 2. API에서 새로 가져오기
+  const detail = await fetchMapDetail(mapId);
+  const search = await fetchMapSearch(mapId);
+
+  if (!detail && !search) {
+    console.log(`  [Map] ${mapId} - API에서 정보를 찾을 수 없음`);
+    return { mapData: null, mobIds: [] };
+  }
+
+  // 검색 결과를 기반으로 MapData 변환
+  const searchResult: ApiMapSearchResult = {
+    id: mapId,
+    name: search?.name || detail?.name || `Map ${mapId}`,
+    streetName: search?.streetName || detail?.streetName || '',
+  };
+
+  const mapData = convertToMapData(searchResult, detail);
+
+  // 몬스터 ID 수집
+  const mobIds = mapData.spawns?.normal.mobs.map((m) => m.mobId) || [];
+
+  // 저장
+  ensureDir(MAPS_DIR);
   const filename = generateFilename(mapData.id, mapData.nameEn || mapData.name);
   const outputPath = path.join(MAPS_DIR, filename);
+  saveJson(outputPath, mapData as unknown as Record<string, unknown>);
 
-  fs.writeFileSync(outputPath, JSON.stringify(mapData, null, 2) + '\n', 'utf8');
+  console.log(`  [Map] ${mapId} -> ${outputPath} (몬스터: ${mobIds.length}개)`);
 
-  return outputPath;
+  return { mapData, mobIds };
 }
 
 // ============================================================================
-// Main
+// Main (CLI)
 // ============================================================================
 
 async function main() {
@@ -341,29 +236,26 @@ async function main() {
 
   let targetMaps: ApiMapSearchResult[] = [];
 
-  // 검색 또는 ID로 맵 목록 가져오기
   if (searchQuery) {
     targetMaps = await searchMaps(searchQuery, count);
     console.log(`검색 결과: ${targetMaps.length}개 맵\n`);
   } else if (mapIds.length > 0) {
-    // ID로 직접 지정된 경우, 검색 결과 형식으로 변환
     for (const id of mapIds) {
       const detail = await fetchMapDetail(id);
       if (detail && detail.name) {
         targetMaps.push({
           id,
           name: detail.name,
-          streetName: detail.streetName || ''
+          streetName: detail.streetName || '',
         });
       } else {
-        // 상세 정보가 없어도 ID만으로 추가
         targetMaps.push({
           id,
           name: `Map ${id}`,
-          streetName: ''
+          streetName: '',
         });
       }
-      await new Promise((resolve) => setTimeout(resolve, 300));
+      await delay(300);
     }
   }
 
@@ -380,16 +272,13 @@ async function main() {
     const searchResult = targetMaps[i];
 
     try {
-      // 기존 파일 스킵
-      if (skipExisting && mapFileExists(searchResult.id)) {
+      if (skipExisting && fileExists(MAPS_DIR, searchResult.id)) {
         skippedCount++;
         continue;
       }
 
-      // 상세 정보 가져오기
       const detail = await fetchMapDetail(searchResult.id);
 
-      // 필터링
       if (skipTowns && detail?.isTown === true) {
         skippedCount++;
         continue;
@@ -400,9 +289,12 @@ async function main() {
         continue;
       }
 
-      // 변환 및 저장
       const mapData = convertToMapData(searchResult, detail);
-      const outputPath = saveMapData(mapData);
+
+      ensureDir(MAPS_DIR);
+      const filename = generateFilename(mapData.id, mapData.nameEn || mapData.name);
+      const outputPath = path.join(MAPS_DIR, filename);
+      saveJson(outputPath, mapData as unknown as Record<string, unknown>);
 
       const mobCount = mapData.spawns?.normal.mobs.length || 0;
       const townStr = mapData.isTown ? ' [Town]' : '';
@@ -411,8 +303,7 @@ async function main() {
       console.log(`[${searchResult.id}] ${searchResult.name}${townStr}${mobStr} -> ${outputPath}`);
       successCount++;
 
-      // API 부하 방지
-      await new Promise((resolve) => setTimeout(resolve, 300));
+      await delay(300);
     } catch (error) {
       failCount++;
       console.error(`[${searchResult.id}] 오류:`, error instanceof Error ? error.message : error);
@@ -427,7 +318,11 @@ async function main() {
   console.log(`========================================`);
 }
 
-main().catch((error) => {
-  console.error('Fatal error:', error);
-  process.exit(1);
-});
+// CLI 직접 실행 시에만 main 호출 (import 시에는 실행하지 않음)
+const isDirectRun = process.argv[1]?.replace(/\.ts$/, '') === import.meta.url.replace(/^file:\/\//, '').replace(/\.ts$/, '');
+if (isDirectRun) {
+  main().catch((error) => {
+    console.error('Fatal error:', error);
+    process.exit(1);
+  });
+}

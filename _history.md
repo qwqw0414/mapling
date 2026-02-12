@@ -1,5 +1,20 @@
 # Mapling - 개발 히스토리
 
+[2026-02-12] [FIX] 인벤토리 휴지통 드래그 감지 수정: pointerover/out 이벤트 → updateDropTarget에서 좌표 기반 영역 체크로 변경, 드래그 중 휴지통 하이라이트 정상 작동
+[2026-02-12] [FIX] 드랍률 배율 버그 수정: itemData.category(세부분류) → itemData.type(대분류) 사용으로 변경, 글로벌 스킬의 장비/소비/기타 드랍률 증가가 정상 작동하도록 수정
+[2026-02-12] [FEAT] 글로벌 스킬 표기 변경: 경험치/메소/드랍률 배율 표기를 % → 배수로 변경(1배, 1.5배, 2배 등), 단위도 '%' → '배'로 수정
+[2026-02-12] [FEAT] 인벤토리 휴지통 기능: 좌측 하단 휴지통 아이콘, 아이템 D&D로 삭제, 호버 시 빨간색 하이라이트
+[2026-02-12] [FIX] 새로고침 시 상태 손실: beforeunload 이벤트 핸들러 추가로 페이지 닫기/새로고침 직전 saveCurrentState() 호출, 30초 자동저장만으로 놓치던 최신 변경사항(mode 등) 보존
+[2026-02-12] [FEAT] 세이브 데이터에 캐릭터 전투 모드 저장: SavedCharacter에 mode 필드 추가(idle/combat), SaveData v0.4.0 마이그레이션(v0.3.0은 mode 기본값 'idle' 적용), 로드 시 전투 상태 복원
+[2026-02-12] [FIX] 캐릭터 스프라이트 위치 점프: GifSource.width 기반 동적 오프셋(anchor 1,1 + idle 기준 보정) + ANIMATION_SPRITE_OFFSETS 수동 미세보정 병행. 동적보정이 대부분 처리, 잔여 1~5px은 수동 오프셋으로 조정 가능
+[2026-02-12] [FIX] 한손무기 대기 애니메이션 무기 미표시: getIdleAnimation(hasWeapon)이 일괄 stand2 반환 -> getWeaponIdleAnimation(weaponId)로 무기유형별 idle 선택(한손=stand1, 양손/원거리=stand2)
+[2026-02-12] [FEAT] fetch 스크립트 공통 모듈 추출: scripts/lib/에 types/constants/db/api/fileUtils/itemHelpers 분리, fetch-map-all을 오케스트레이터로 재구성(950->205줄), 중복 함수 20+개 통합
+[2026-02-12] [FIX] 장비 슬롯 매핑 버그: fetch-map-all.ts의 processItem에서 slot 필드 미생성이 근본 원인. determineCategoryFromApi 로직 추가 + 런타임 resolveEquipSlot 방어코드 병행
+[2026-02-12] [FEAT] 맵 104040000(헤네시스 사냥터 I) 추가: 파란달팽이/빨간달팽이/슬라임/초록버섯/주황버섯/스텀프/스포어 7종 스폰, 드롭 아이템 101종 일괄 생성
+[2026-02-12] [FIX] 맵이동 후 데미지/드랍 애니메이션 멈춤 버그: DamageSystem/DropSystem의 clearAll()에서 isDestroyed=true 후 미복원, container.destroyed 체크 방식으로 전환
+[2026-02-12] [FIX] PixiJS 버튼 클릭 불량 일괄 수정: Text/Graphics 자식이 포인터 이벤트 가로채는 패턴, 6개 파일 13곳에 eventMode='none' 적용
+[2026-02-12] [FIX] 밸런스패치: 최대몬스터 10->5(+1/Lv,20), 초기스폰 50%->20%(+4%/Lv,20), 젠주기 2.5s->10s(-300ms/Lv,20,최소4s). 초기 난이도 상향, 스킬 투자 보상 강화
+[2026-02-12] [FIX] 세이브 로드 시 캐릭터 스프라이트/몬스터 이미지 미표시: 생성자에서 저장맵 우선 로드, create()후 reloadAllCharacterSprites() 호출 추가
 [2026-02-11] [FEAT] 글로벌 스킬 시스템: 메소 10000당 레벨업, 필드(젠수/주기/이동속도) 5종+보상(EXP/메소/드랍률) 6종 총 11종 패시브, SaveData v0.3.0 마이그레이션, 좌측상단 버튼+모달UI
 [2026-02-11] [FEAT] 애니메이션별 스프라이트 오프셋 보정 기반: ANIMATION_SPRITE_OFFSETS 맵으로 모션별 x/y 위치 보정, GIF 크기 차이로 인한 위치 점프 해결용
 [2026-02-11] [FEAT] 맵 선택 UI 심플화: 지역 아이콘/이모지 제거, 맵이름+레벨+몬스터만 표시, 아이템 높이 75->50px 축소

@@ -6,7 +6,7 @@ import {
   GAME_CONFIG,
   LAYOUT_CONFIG,
 } from '@/constants/config';
-import { getMapById } from '@/data/maps';
+import { getMapById, getHuntingMaps } from '@/data/maps';
 import { getMobById } from '@/data/mobs';
 import { getItemById, convertItemDataToItem } from '@/data/items';
 import { AudioManager } from '@/game/systems/AudioManager';
@@ -30,14 +30,15 @@ import {
   saveGame,
   loadGame,
   hasSaveData,
+  deleteSave,
   toSavedCharacter,
   toPartyCharacter,
 } from '@/utils/storage';
 import {
   createLookWithChoices,
   CORE_ANIMATIONS,
-  getIdleAnimation,
   getRandomAttackAnimation,
+  getWeaponIdleAnimation,
   getWeaponPreloadAnimations,
 } from '@/data/characterLook';
 import type { MapInfo } from '@/types/map';
@@ -141,7 +142,7 @@ const BEGINNER_EQUIPMENT: Partial<Record<EquipSlot, EquipItem>> = {
   top: createStarterEquipItem(1040002, '흰색 런닝셔츠', 'top', 2),
   bottom: createStarterEquipItem(1060002, '파란 청 반바지', 'bottom', 1),
   shoes: createStarterEquipItem(1072005, '파란 운동화', 'shoes', 1),
-  weapon: createStarterEquipItem(1402001, '목검', 'weapon', 0, 17),
+  weapon: createStarterEquipItem(1322005, '몽둥이', 'weapon', 0, 19),
 };
 
 function createBeginnerEquipment(): Equipment {
@@ -218,7 +219,8 @@ export class MainScene extends BaseScene {
   private characterCreationUI: CharacterCreationUI | null = null;
   private mapSelectionUI: MapSelectionUI | null = null;
   private globalSkillUI: GlobalSkillUI | null = null;
-  private globalSkillButton: Text | null = null;
+  private globalSkillButton: Container | null = null;
+  private resetSaveButton: Container | null = null;
   private inventoryUI: InventoryUI | null = null;
   private addCharacterButton: Container | null = null;
 
@@ -227,10 +229,35 @@ export class MainScene extends BaseScene {
 
   // Auto-save timer
   private autoSaveTimer: ReturnType<typeof setInterval> | null = null;
+  // Beforeunload handler reference for cleanup
+  private beforeUnloadHandler: (() => void) | null = null;
 
   constructor(mapId: number = 104010001) {
     super();
+
+    // Saved map takes priority over default mapId
+    // so that load() fetches the correct map's monster assets
+    if (hasSaveData()) {
+      const savedData = loadGame();
+      if (savedData.lastMapId) {
+        const savedMap = getMapById(savedData.lastMapId);
+        if (savedMap) {
+          this.mapInfo = savedMap;
+          return;
+        }
+      }
+    }
+
     this.mapInfo = getMapById(mapId) ?? null;
+
+    // Fallback: saved/default map not found -> use first available hunting map
+    if (!this.mapInfo) {
+      const huntingMaps = getHuntingMaps();
+      if (huntingMaps.length > 0) {
+        this.mapInfo = huntingMaps[0];
+        console.warn(`[MainScene] Map [mapId]=[${mapId}] not found, fallback to [map]=[${this.mapInfo.name}]`);
+      }
+    }
   }
 
   // ============================================================================
@@ -262,12 +289,21 @@ export class MainScene extends BaseScene {
     this.initializeSystems();
     this.createMapButton();
     this.createGlobalSkillButton();
+    this.createResetSaveButton();
     this.createRightPanel();
     this.createVerticalDivider();
     this.monsterSystem.spawnInitialMonsters();
 
+    // Load character sprites for restored party members (after UI is ready)
+    if (this.partyCharacters.length > 0) {
+      this.reloadAllCharacterSprites();
+    }
+
     // Start auto-save timer (real-time persistence)
     this.startAutoSave();
+
+    // Register beforeunload handler to save on page close/refresh
+    this.setupBeforeUnloadHandler();
 
     console.log('[MainScene] Created with layout:', this.layout);
   }
@@ -428,40 +464,110 @@ export class MainScene extends BaseScene {
   }
 
   // ============================================================================
-  // Global Skill Button (필드 좌측 상단, 맵 버튼 아래 오버레이)
+  // Global Skill Button (필드 우측 상단, 아이콘 버튼)
   // ============================================================================
 
   private createGlobalSkillButton(): void {
-    const padding = LAYOUT_CONFIG.MAP_BUTTON.PADDING;
-    const mapButtonBottom = this.mapTitleText
-      ? this.mapTitleText.y + this.mapTitleText.height
-      : padding + 20;
+    const BUTTON_SIZE = 36;
+    const PADDING = 12;
+    const fieldWidth = this.layout.leftPanel.width;
 
-    this.globalSkillButton = new Text({
-      text: '글로벌 스킬',
-      style: {
-        fontSize: 14,
-        fill: 0x88ccff,
-        fontWeight: 'bold',
-        fontFamily: 'Arial',
-        dropShadow: { color: 0x000000, blur: 3, distance: 1, alpha: 0.8 },
-      },
-    });
-    this.globalSkillButton.x = padding;
-    this.globalSkillButton.y = mapButtonBottom + 8;
+    this.globalSkillButton = new Container();
+    this.globalSkillButton.x = fieldWidth - BUTTON_SIZE - PADDING;
+    this.globalSkillButton.y = PADDING;
     this.globalSkillButton.eventMode = 'static';
     this.globalSkillButton.cursor = 'pointer';
-    this.globalSkillButton.on('pointerdown', () => this.openGlobalSkillUI());
+
+    // Button background
+    const bg = new Graphics();
+    bg.roundRect(0, 0, BUTTON_SIZE, BUTTON_SIZE, 8);
+    bg.fill({ color: 0x1e1e2e, alpha: 0.85 });
+    bg.stroke({ color: 0x4488ff, width: 1.5 });
+    bg.label = 'globalSkillBtnBg';
+    this.globalSkillButton.addChild(bg);
+
+    // Star icon (5-pointed star)
+    const icon = new Graphics();
+    const cx = BUTTON_SIZE / 2;
+    const cy = BUTTON_SIZE / 2;
+    const outerRadius = 10;
+    const innerRadius = 4.5;
+    const points = 5;
+
+    icon.moveTo(
+      cx + outerRadius * Math.sin(0),
+      cy - outerRadius * Math.cos(0),
+    );
+    for (let i = 0; i < points; i++) {
+      const outerAngle = (i * 2 * Math.PI) / points - Math.PI / 2;
+      const innerAngle = outerAngle + Math.PI / points;
+      icon.lineTo(
+        cx + outerRadius * Math.cos(outerAngle),
+        cy + outerRadius * Math.sin(outerAngle),
+      );
+      icon.lineTo(
+        cx + innerRadius * Math.cos(innerAngle),
+        cy + innerRadius * Math.sin(innerAngle),
+      );
+    }
+    icon.closePath();
+    icon.fill(0x4488ff);
+    icon.label = 'globalSkillBtnIcon';
+    this.globalSkillButton.addChild(icon);
+
+    // Hover / out effects
     this.globalSkillButton.on('pointerover', () => {
-      if (this.globalSkillButton) {
-        this.globalSkillButton.style.fill = 0xaaddff;
+      bg.clear();
+      bg.roundRect(0, 0, BUTTON_SIZE, BUTTON_SIZE, 8);
+      bg.fill({ color: 0x2e2e50, alpha: 0.95 });
+      bg.stroke({ color: 0x66aaff, width: 2 });
+      icon.clear();
+      icon.moveTo(
+        cx + outerRadius * Math.cos(-Math.PI / 2),
+        cy + outerRadius * Math.sin(-Math.PI / 2),
+      );
+      for (let i = 0; i < points; i++) {
+        const outerAngle = (i * 2 * Math.PI) / points - Math.PI / 2;
+        const innerAngle = outerAngle + Math.PI / points;
+        icon.lineTo(
+          cx + outerRadius * Math.cos(outerAngle),
+          cy + outerRadius * Math.sin(outerAngle),
+        );
+        icon.lineTo(
+          cx + innerRadius * Math.cos(innerAngle),
+          cy + innerRadius * Math.sin(innerAngle),
+        );
       }
+      icon.closePath();
+      icon.fill(0x66aaff);
     });
     this.globalSkillButton.on('pointerout', () => {
-      if (this.globalSkillButton) {
-        this.globalSkillButton.style.fill = 0x88ccff;
+      bg.clear();
+      bg.roundRect(0, 0, BUTTON_SIZE, BUTTON_SIZE, 8);
+      bg.fill({ color: 0x1e1e2e, alpha: 0.85 });
+      bg.stroke({ color: 0x4488ff, width: 1.5 });
+      icon.clear();
+      icon.moveTo(
+        cx + outerRadius * Math.cos(-Math.PI / 2),
+        cy + outerRadius * Math.sin(-Math.PI / 2),
+      );
+      for (let i = 0; i < points; i++) {
+        const outerAngle = (i * 2 * Math.PI) / points - Math.PI / 2;
+        const innerAngle = outerAngle + Math.PI / points;
+        icon.lineTo(
+          cx + outerRadius * Math.cos(outerAngle),
+          cy + outerRadius * Math.sin(outerAngle),
+        );
+        icon.lineTo(
+          cx + innerRadius * Math.cos(innerAngle),
+          cy + innerRadius * Math.sin(innerAngle),
+        );
       }
+      icon.closePath();
+      icon.fill(0x4488ff);
     });
+    this.globalSkillButton.on('pointerdown', () => this.openGlobalSkillUI());
+
     this.fieldLayer.addChild(this.globalSkillButton);
   }
 
@@ -488,6 +594,95 @@ export class MainScene extends BaseScene {
         this.inventoryUI.updateMeso(useCharacterStore.getState().meso);
       }
     }
+  }
+
+  // ============================================================================
+  // Reset Save Button (필드 우측 상단, 글로벌 스킬 버튼 왼쪽)
+  // ============================================================================
+
+  private createResetSaveButton(): void {
+    const BUTTON_SIZE = 36;
+    const PADDING = 12;
+    const GAP = 8;
+    const fieldWidth = this.layout.leftPanel.width;
+
+    this.resetSaveButton = new Container();
+    this.resetSaveButton.x = fieldWidth - BUTTON_SIZE * 2 - PADDING - GAP;
+    this.resetSaveButton.y = PADDING;
+    this.resetSaveButton.eventMode = 'static';
+    this.resetSaveButton.cursor = 'pointer';
+
+    // Button background
+    const bg = new Graphics();
+    bg.roundRect(0, 0, BUTTON_SIZE, BUTTON_SIZE, 8);
+    bg.fill({ color: 0x1e1e2e, alpha: 0.85 });
+    bg.stroke({ color: 0xff6644, width: 1.5 });
+    bg.label = 'resetSaveBtnBg';
+    this.resetSaveButton.addChild(bg);
+
+    // Trash icon (simplified bin shape)
+    const icon = new Graphics();
+    const cx = BUTTON_SIZE / 2;
+    this.drawTrashIcon(icon, cx);
+    icon.label = 'resetSaveBtnIcon';
+    this.resetSaveButton.addChild(icon);
+
+    // Hover / out effects
+    this.resetSaveButton.on('pointerover', () => {
+      bg.clear();
+      bg.roundRect(0, 0, BUTTON_SIZE, BUTTON_SIZE, 8);
+      bg.fill({ color: 0x2e2e50, alpha: 0.95 });
+      bg.stroke({ color: 0xff8866, width: 2 });
+      icon.clear();
+      this.drawTrashIcon(icon, cx, 0xff8866);
+    });
+    this.resetSaveButton.on('pointerout', () => {
+      bg.clear();
+      bg.roundRect(0, 0, BUTTON_SIZE, BUTTON_SIZE, 8);
+      bg.fill({ color: 0x1e1e2e, alpha: 0.85 });
+      bg.stroke({ color: 0xff6644, width: 1.5 });
+      icon.clear();
+      this.drawTrashIcon(icon, cx);
+    });
+    this.resetSaveButton.on('pointerdown', () => this.confirmResetSave());
+
+    this.fieldLayer.addChild(this.resetSaveButton);
+  }
+
+  /**
+   * Draw a simplified trash/bin icon centered at cx
+   */
+  private drawTrashIcon(g: Graphics, cx: number, color: number = 0xff6644): void {
+    const cy = 18;
+
+    // Lid (horizontal bar)
+    g.rect(cx - 8, cy - 8, 16, 3);
+    g.fill(color);
+
+    // Lid handle
+    g.rect(cx - 3, cy - 11, 6, 3);
+    g.fill(color);
+
+    // Body
+    g.rect(cx - 6, cy - 4, 12, 12);
+    g.fill(color);
+
+    // Body lines (slots)
+    g.rect(cx - 3, cy - 1, 1.5, 7);
+    g.fill(0x1e1e2e);
+    g.rect(cx + 1.5, cy - 1, 1.5, 7);
+    g.fill(0x1e1e2e);
+  }
+
+  private confirmResetSave(): void {
+    const isConfirmed = window.confirm(
+      '모든 세이브 데이터가 삭제됩니다.\n정말 초기화하시겠습니까?'
+    );
+    if (!isConfirmed) return;
+
+    this.stopAutoSave();
+    deleteSave();
+    window.location.reload();
   }
 
   // ============================================================================
@@ -609,6 +804,8 @@ export class MainScene extends BaseScene {
     label.anchor.set(0.5, 0);
     label.x = width / 2;
     label.y = height / 2 + plusSize / 2 + 8;
+    label.eventMode = 'none';
+    plusGraphics.eventMode = 'none';
     button.addChild(label);
 
     button.eventMode = 'static';
@@ -728,6 +925,7 @@ export class MainScene extends BaseScene {
       onItemSwap: (category, fromIndex, toIndex) => this.onInventoryItemSwap(category, fromIndex, toIndex),
       onDragOutside: (slotIndex, item, globalX, globalY) => this.handleInventoryDragOutside(slotIndex, item, globalX, globalY),
       onDoubleClick: (slotIndex, item) => this.handleInventoryDoubleClick(slotIndex, item),
+      onItemDelete: (slotIndex, item) => this.handleInventoryItemDelete(slotIndex, item),
     });
 
     this.inventoryUI.x = padding;
@@ -941,8 +1139,34 @@ export class MainScene extends BaseScene {
     console.log('[MainScene] No character available for equipping');
   }
 
+  private handleInventoryItemDelete(
+    _slotIndex: number,
+    inventorySlot: import('@/types/item').InventorySlot,
+  ): void {
+    const itemId = inventorySlot.item.id;
+    const itemName = inventorySlot.item.name;
+    const quantity = inventorySlot.quantity;
+
+    console.log(`[MainScene] Deleting item: [itemId]=[${itemId}] [quantity]=[${quantity}]`);
+
+    // Remove item from inventory store
+    const inventoryStore = useInventoryStore.getState();
+    inventoryStore.removeItem(itemId, quantity);
+
+    // Refresh inventory UI
+    const category = inventorySlot.item.category;
+    this.loadInventoryItems(category);
+
+    // Save state
+    this.saveCurrentState();
+
+    // Log the deletion
+    this.logSystem.addLog(`${itemName} x${quantity} 삭제`, 0xFF6666);
+  }
+
   // ============================================================================
   // Character Creation UI
+  // ============================================================================
   // ============================================================================
 
   private showCharacterCreationUI(): void {
@@ -1081,30 +1305,36 @@ export class MainScene extends BaseScene {
 
   /**
    * Resolve idle animation GIF with fallback chain
-   * stand2 (weapon idle) -> alert (combat ready) -> stand1 (unarmed idle)
+   * Weapon-type-aware: one-handed weapons use stand1, two-handed/ranged use stand2
+   * Fallback: weapon idle -> alert -> stand1
    * Returns both the GIF source and the resolved animation name for offset correction
    */
   private async resolveIdleGif(
     character: PartyCharacter,
     assetManager: AssetManager,
   ): Promise<{ source: GifSource; animation: import('@/data/characterLook').CharacterAnimation } | null> {
-    const isArmed = hasWeapon(character);
+    const weaponId = getWeaponId(character);
+    const weaponIdle = getWeaponIdleAnimation(weaponId);
 
-    if (isArmed) {
-      // Try stand2 first (weapon-holding idle)
-      const stand2Gif = await assetManager.getCharacterGif(character.look, 'stand2');
-      if (stand2Gif) return { source: stand2Gif, animation: 'stand2' };
+    // Try weapon-specific idle animation first
+    const idleGif = await assetManager.getCharacterGif(character.look, weaponIdle);
+    if (idleGif) return { source: idleGif, animation: weaponIdle };
 
-      // Fallback: alert (combat-ready stance, usually shows weapon)
+    // Fallback: alert (combat-ready stance, usually shows weapon)
+    if (hasWeapon(character)) {
       const alertGif = await assetManager.getCharacterGif(character.look, 'alert');
       if (alertGif) return { source: alertGif, animation: 'alert' };
 
-      console.warn(`[MainScene] stand2/alert failed, falling back to stand1: [name]=[${character.name}]`);
+      console.warn(`[MainScene] ${weaponIdle}/alert failed, falling back to stand1: [name]=[${character.name}]`);
     }
 
     // Final fallback: stand1 (unarmed idle)
-    const stand1Gif = await assetManager.getCharacterGif(character.look, 'stand1');
-    return stand1Gif ? { source: stand1Gif, animation: 'stand1' } : null;
+    if (weaponIdle !== 'stand1') {
+      const stand1Gif = await assetManager.getCharacterGif(character.look, 'stand1');
+      return stand1Gif ? { source: stand1Gif, animation: 'stand1' } : null;
+    }
+
+    return null;
   }
 
   /**
@@ -1202,11 +1432,11 @@ export class MainScene extends BaseScene {
     const attackAnim = getRandomAttackAnimation(getWeaponId(character));
     await this.updateSlotAnimation(slotIndex, attackAnim);
 
-    // After a short delay, switch back to idle (weapon aware)
+    // After a short delay, switch back to idle (weapon-type aware)
     setTimeout(() => {
       const currentChar = this.partyCharacters[slotIndex];
       if (currentChar && currentChar.mode === 'combat') {
-        this.updateSlotAnimation(slotIndex, getIdleAnimation(hasWeapon(currentChar)));
+        this.updateSlotAnimation(slotIndex, getWeaponIdleAnimation(getWeaponId(currentChar)));
       }
     }, 600);
   }
@@ -1277,10 +1507,10 @@ export class MainScene extends BaseScene {
       partySlot.updateMode(newMode);
     }
 
-    // Switch animation based on mode (weapon-aware, random attack selection)
+    // Switch animation based on mode (weapon-type aware, random attack selection)
     const animation = newMode === 'combat'
       ? getRandomAttackAnimation(getWeaponId(character))
-      : getIdleAnimation(hasWeapon(character));
+      : getWeaponIdleAnimation(getWeaponId(character));
     this.updateSlotAnimation(slotIndex, animation);
   }
 
@@ -1447,7 +1677,11 @@ export class MainScene extends BaseScene {
     // Persist immediately after map change
     this.saveCurrentState();
 
-    console.log(`[MainScene] Map changed successfully to: [map]=[${this.mapInfo.name}]`);
+    // Update game store
+    const gameStore = useGameStore.getState();
+    gameStore.setCurrentMap(this.mapInfo.id);
+
+    console.log(`[MainScene] Map changed successfully to: [map]=[${this.mapInfo.name}] [id]=[${this.mapInfo.id}]`);
   }
 
   private async stopCurrentBGM(): Promise<void> {
@@ -1598,9 +1832,6 @@ export class MainScene extends BaseScene {
       (c): c is PartyCharacter => c !== null
     );
 
-    // Nothing to save if no characters exist
-    if (activeCharacters.length === 0) return;
-
     const invStore = useInventoryStore.getState();
     const charStore = useCharacterStore.getState();
     const globalSkillStore = useGlobalSkillStore.getState();
@@ -1622,7 +1853,7 @@ export class MainScene extends BaseScene {
     });
 
     if (isSaved) {
-      console.log(`[MainScene] Auto-saved: [party]=[${activeCharacters.length}] [meso]=[${charStore.meso}]`);
+      console.log(`[MainScene] Auto-saved: [party]=[${activeCharacters.length}] [meso]=[${charStore.meso}] [mapId]=[${this.mapInfo?.id ?? 'none'}] [mapName]=[${this.mapInfo?.name ?? 'none'}]`);
     }
   }
 
@@ -1645,6 +1876,26 @@ export class MainScene extends BaseScene {
     }
   }
 
+  /**
+   * Setup beforeunload handler to save state when page closes/refreshes
+   */
+  private setupBeforeUnloadHandler(): void {
+    this.beforeUnloadHandler = () => {
+      this.saveCurrentState();
+    };
+    window.addEventListener('beforeunload', this.beforeUnloadHandler);
+  }
+
+  /**
+   * Remove beforeunload handler
+   */
+  private removeBeforeUnloadHandler(): void {
+    if (this.beforeUnloadHandler !== null) {
+      window.removeEventListener('beforeunload', this.beforeUnloadHandler);
+      this.beforeUnloadHandler = null;
+    }
+  }
+
   // ============================================================================
   // Cleanup
   // ============================================================================
@@ -1652,6 +1903,7 @@ export class MainScene extends BaseScene {
   async destroy(): Promise<void> {
     // Stop auto-save and persist final state
     this.stopAutoSave();
+    this.removeBeforeUnloadHandler();
     this.saveCurrentState();
 
     // Cancel pending divider animation
@@ -1690,6 +1942,12 @@ export class MainScene extends BaseScene {
       this.globalSkillButton.off('pointerdown');
       this.globalSkillButton.off('pointerover');
       this.globalSkillButton.off('pointerout');
+    }
+
+    if (this.resetSaveButton) {
+      this.resetSaveButton.off('pointerdown');
+      this.resetSaveButton.off('pointerover');
+      this.resetSaveButton.off('pointerout');
     }
 
     if (this.mapSelectionUI) {

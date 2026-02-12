@@ -25,7 +25,6 @@ export class DropSystem {
   private onDividerEffectCallback: (() => void) | null = null;
 
   // Animation tracking for cleanup
-  private isDestroyed = false;
   private activeAnimations: Set<Container> = new Set();
 
   constructor(
@@ -91,8 +90,8 @@ export class DropSystem {
         continue;
       }
 
-      // Apply category-specific drop rate multiplier
-      const dropMultiplier = this.getDropMultiplierByCategory(itemData.category);
+      // Apply type-specific drop rate multiplier (use 'type' not 'category')
+      const dropMultiplier = this.getDropMultiplierByType(itemData.type);
       const boostedChance = drop.chance * dropMultiplier;
 
       if (Math.random() * 100 <= boostedChance) {
@@ -115,8 +114,8 @@ export class DropSystem {
     }
   }
 
-  private getDropMultiplierByCategory(category: string): number {
-    switch (category) {
+  private getDropMultiplierByType(type: string): number {
+    switch (type) {
       case 'equip': return getEquipDropMultiplier();
       case 'use': return getUseDropMultiplier();
       case 'etc': return getEtcDropMultiplier();
@@ -184,8 +183,8 @@ export class DropSystem {
     let hasFiredDividerEffect = false;
 
     const animate = (): void => {
-      // Stop if system is destroyed
-      if (this.isDestroyed) return;
+      // Stop if container was already destroyed (e.g. by clearAll during map change)
+      if (container.destroyed) return;
 
       const elapsed = Date.now() - startTime;
 
@@ -240,8 +239,6 @@ export class DropSystem {
   // ============================================================================
 
   clearAll(): void {
-    this.isDestroyed = true;
-
     // Cleanup active fly animations
     for (const container of this.activeAnimations) {
       if (container.parent) {

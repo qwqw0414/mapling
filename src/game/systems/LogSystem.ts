@@ -106,7 +106,8 @@ export class LogSystem {
   private updateLogPositions(): void {
     const padding = LAYOUT_CONFIG.LOG.PADDING;
 
-    let y = padding;
+    const SKILL_BUTTON_OFFSET = 50;
+    let y = padding + SKILL_BUTTON_OFFSET;
     for (const entry of this.logEntries) {
       // 우측 상단 정렬: 텍스트를 우측에 배치
       entry.text.anchor.set(1, 0);

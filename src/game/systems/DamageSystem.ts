@@ -16,7 +16,6 @@ export class DamageSystem {
   private mobSounds: Map<string, HTMLAudioElement> = new Map();
 
   // Animation tracking for cleanup
-  private isDestroyed = false;
   private activeAnimations: Set<Container> = new Set();
 
   constructor(fieldLayer: Container) {
@@ -182,8 +181,8 @@ export class DamageSystem {
     const startTime = Date.now();
 
     const animate = () => {
-      // Stop if system is destroyed
-      if (this.isDestroyed) return;
+      // Stop if container was already destroyed (e.g. by clearAll during map change)
+      if (damageContainer.destroyed) return;
 
       const elapsed = Date.now() - startTime;
       const progress = Math.min(elapsed / duration, 1);
@@ -253,8 +252,6 @@ export class DamageSystem {
    * Show a "MISS" text above a monster sprite
    */
   showMissText(sprite: Container): void {
-    if (this.isDestroyed) return;
-
     const missText = new Text({
       text: 'MISS',
       style: {
@@ -275,11 +272,8 @@ export class DamageSystem {
     const duration = 600;
 
     const animate = (): void => {
-      if (this.isDestroyed) {
-        if (missText.parent) missText.parent.removeChild(missText);
-        missText.destroy();
-        return;
-      }
+      // Stop if text was already destroyed (e.g. by clearAll during map change)
+      if (missText.destroyed) return;
 
       const elapsed = Date.now() - startTime;
       const progress = Math.min(elapsed / duration, 1);
@@ -307,7 +301,6 @@ export class DamageSystem {
   }
 
   clearAll(): void {
-    this.isDestroyed = true;
     this.damageOffsets.clear();
 
     // Cleanup active damage number animations

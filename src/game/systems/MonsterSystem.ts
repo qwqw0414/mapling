@@ -9,7 +9,6 @@ import {
   getMaxMonsters,
   getBatchSpawnCount,
   getSpawnInterval,
-  getInitialSpawnRatio,
 } from './GlobalSkillResolver';
 import type { MapInfo } from '@/types/map';
 import type { MobData } from '@/types/monster';
@@ -117,7 +116,7 @@ export class MonsterSystem {
     if (!this.mapInfo) return;
 
     const maxMonsters = getMaxMonsters();
-    const initialCount = Math.floor(maxMonsters * getInitialSpawnRatio());
+    const initialCount = maxMonsters;
     for (let i = 0; i < initialCount; i++) {
       this.spawnMonster();
     }
@@ -476,7 +475,8 @@ export class MonsterSystem {
         return 1000 + Math.random() * 1500;
       case 'jump':
         // Jump duration is controlled by physics, but set timer for next action
-        return 800 + Math.random() * 1200;
+        // return 800 + Math.random() * 1200;
+        return 2000;
       default:
         return 1500 + Math.random() * 1500;
     }

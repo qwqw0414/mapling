@@ -59,14 +59,11 @@ export const MAP_CONFIG = {
 // ============================================================================
 
 export const SPAWN_CONFIG = {
-  // 맵당 최대 몬스터 수
-  MAX_MONSTERS: 10,
+  // 맵당 최대 몬스터 수 (글로벌 스킬로 최대 25까지 증가)
+  MAX_MONSTERS: 5,
 
-  // 초기 스폰 비율 (시작 시 MAX_MONSTERS의 몇 %를 스폰할지)
-  INITIAL_SPAWN_RATIO: 0.5,
-
-  // 등급별 스폰 주기 (ms)
-  NORMAL_INTERVAL: 2500,
+  // 등급별 스폰 주기 (ms, 글로벌 스킬로 최소 4000ms까지 감소)
+  NORMAL_INTERVAL: 10000,
   ELITE_INTERVAL: 60000,
   BOSS_INTERVAL: 300000,
 
@@ -208,13 +205,6 @@ export const SLOT_CONFIG = {
     LABEL_WIDTH: 24,
   },
 
-  // 스킬 슬롯 영역
-  SKILL_BAR: {
-    SLOT_SIZE: 28,
-    SLOT_GAP: 2,
-    SLOT_COUNT: 6,
-  },
-
   // 빈 슬롯 스타일
   EMPTY_SLOT: {
     BORDER_COLOR: 0x444444,
@@ -237,7 +227,10 @@ export const INVENTORY_CONFIG = {
   GRID_COLUMNS: 5,
   GRID_ROWS: 5,
   SLOT_SIZE: 36,
-  SLOT_GAP: 2,
+  SLOT_GAP: 3,
+
+  // 탭 간격
+  TAB_GAP: 4,
 
   // 레이아웃
   PADDING: 8,

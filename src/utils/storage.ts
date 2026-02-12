@@ -5,12 +5,13 @@ import type { PartyCharacter } from '@/types/party';
 import type { LearnedSkill } from '@/types/skill';
 import type { GlobalSkillState } from '@/types/globalSkill';
 import type { CharacterLook } from '@/data/characterLook';
+import { getMapById } from '@/data/maps';
 
 // ============================================================================
 // Constants
 // ============================================================================
 
-const CURRENT_SAVE_VERSION = '0.3.0';
+const CURRENT_SAVE_VERSION = '0.4.0';
 const DEFAULT_MAP_ID = 104010001;
 
 // ============================================================================
@@ -19,7 +20,7 @@ const DEFAULT_MAP_ID = 104010001;
 
 /**
  * Persisted character data (runtime-only fields excluded)
- * Excluded: mode, targetMonsterId, lastAttackTime, currentAnimation, isActive
+ * Excluded: targetMonsterId, lastAttackTime, currentAnimation, isActive
  */
 export interface SavedCharacter {
   id: string;
@@ -41,6 +42,8 @@ export interface SavedCharacter {
   equipment: Equipment;
   learnedSkills: LearnedSkill[];
   equippedSkillSlots: Array<number | null>;
+  /** Character mode - idle (management) or combat (auto-attack) */
+  mode: 'idle' | 'combat';
 }
 
 export interface SaveData {
@@ -115,6 +118,24 @@ interface LegacySaveDataV02 {
   equipInventory: InventorySlot[];
   useInventory: InventorySlot[];
   etcInventory: InventorySlot[];
+  settings: GameSettings;
+  statistics: GameStatistics;
+}
+
+// ============================================================================
+// Legacy Save Data (v0.3.0) for Migration
+// ============================================================================
+
+interface LegacySaveDataV03 {
+  version: string;
+  timestamp: number;
+  party: Array<Omit<SavedCharacter, 'mode'>>; // v0.3.0 had no mode field
+  meso: number;
+  lastMapId: number;
+  equipInventory: InventorySlot[];
+  useInventory: InventorySlot[];
+  etcInventory: InventorySlot[];
+  globalSkills: GlobalSkillState;
   settings: GameSettings;
   statistics: GameStatistics;
 }
@@ -204,7 +225,7 @@ export function hasSaveData(): boolean {
 
 /**
  * Convert a runtime PartyCharacter to a persistable SavedCharacter.
- * Strips runtime-only fields: mode, targetMonsterId, lastAttackTime, currentAnimation, isActive
+ * Strips runtime-only fields: targetMonsterId, lastAttackTime, currentAnimation, isActive
  */
 export function toSavedCharacter(character: PartyCharacter): SavedCharacter {
   return {
@@ -227,12 +248,13 @@ export function toSavedCharacter(character: PartyCharacter): SavedCharacter {
     equipment: { ...character.equipment },
     learnedSkills: character.learnedSkills.map((s) => ({ ...s })),
     equippedSkillSlots: [...character.equippedSkillSlots],
+    mode: character.mode,
   };
 }
 
 /**
  * Convert a persisted SavedCharacter back to a runtime PartyCharacter.
- * All characters restore in idle mode with no combat target.
+ * Restores the saved mode (idle or combat) with no combat target.
  */
 export function toPartyCharacter(saved: SavedCharacter): PartyCharacter {
   return {
@@ -243,9 +265,9 @@ export function toPartyCharacter(saved: SavedCharacter): PartyCharacter {
     equipment: { ...saved.equipment },
     learnedSkills: saved.learnedSkills.map((s) => ({ ...s })),
     equippedSkillSlots: [...saved.equippedSkillSlots],
-    // Runtime defaults -- all characters load in idle state
+    // Runtime defaults
     isActive: true,
-    mode: 'idle',
+    mode: saved.mode,
     targetMonsterId: null,
     lastAttackTime: 0,
     currentAnimation: 'stand',
@@ -258,7 +280,7 @@ export function toPartyCharacter(saved: SavedCharacter): PartyCharacter {
 
 /**
  * Detect save version and apply migrations as needed.
- * Supports chain migration: v0.1.0 -> v0.2.0 -> v0.3.0
+ * Supports chain migration: v0.1.0 -> v0.2.0 -> v0.3.0 -> v0.4.0
  */
 function migrateSaveData(raw: Record<string, unknown>): SaveData {
   const version = (raw.version as string) ?? '0.1.0';
@@ -268,14 +290,21 @@ function migrateSaveData(raw: Record<string, unknown>): SaveData {
   }
 
   if (version === '0.1.0') {
-    console.log('[Storage] Migrating save data: v0.1.0 -> v0.2.0');
+    console.log('[Storage] Migrating save data: v0.1.0 -> v0.2.0 -> v0.3.0 -> v0.4.0');
     const v02 = migrateV01ToV02(raw as unknown as LegacySaveDataV01);
-    return migrateV02ToV03(v02 as unknown as LegacySaveDataV02);
+    const v03 = migrateV02ToV03(v02 as unknown as LegacySaveDataV02);
+    return migrateV03ToV04(v03 as unknown as LegacySaveDataV03);
   }
 
   if (version === '0.2.0') {
-    console.log('[Storage] Migrating save data: v0.2.0 -> v0.3.0');
-    return migrateV02ToV03(raw as unknown as LegacySaveDataV02);
+    console.log('[Storage] Migrating save data: v0.2.0 -> v0.3.0 -> v0.4.0');
+    const v03 = migrateV02ToV03(raw as unknown as LegacySaveDataV02);
+    return migrateV03ToV04(v03 as unknown as LegacySaveDataV03);
+  }
+
+  if (version === '0.3.0') {
+    console.log('[Storage] Migrating save data: v0.3.0 -> v0.4.0');
+    return migrateV03ToV04(raw as unknown as LegacySaveDataV03);
   }
 
   // Unknown version -- return empty to avoid corruption
@@ -310,6 +339,7 @@ function migrateV01ToV02(old: LegacySaveDataV01): LegacySaveDataV02 {
       equipment: old.equipment ?? createEmptyEquipment(),
       learnedSkills: [],
       equippedSkillSlots: [null, null, null, null, null, null],
+      mode: 'idle', // Default to idle for migrated characters
     };
     party.push(savedChar);
   }
@@ -329,11 +359,11 @@ function migrateV01ToV02(old: LegacySaveDataV01): LegacySaveDataV02 {
 }
 
 /**
- * Migrate v0.2.0 (no global skills) to v0.3.0 (global skills added)
+ * Migrate v0.2.0 (no global skills, no mode) to v0.3.0 (global skills added, still no mode)
  */
-function migrateV02ToV03(old: LegacySaveDataV02): SaveData {
+function migrateV02ToV03(old: LegacySaveDataV02): LegacySaveDataV03 {
   return {
-    version: CURRENT_SAVE_VERSION,
+    version: '0.3.0',
     timestamp: Date.now(),
     party: old.party ?? [],
     meso: old.meso ?? 0,
@@ -342,6 +372,31 @@ function migrateV02ToV03(old: LegacySaveDataV02): SaveData {
     useInventory: old.useInventory ?? [],
     etcInventory: old.etcInventory ?? [],
     globalSkills: {},
+    settings: old.settings ?? { ...DEFAULT_SETTINGS },
+    statistics: old.statistics ?? { ...DEFAULT_STATISTICS },
+  };
+}
+
+/**
+ * Migrate v0.3.0 (no mode field) to v0.4.0 (mode field added)
+ */
+function migrateV03ToV04(old: LegacySaveDataV03): SaveData {
+  // Add mode field to characters from v0.3.0 (default to idle)
+  const migratedParty = (old.party ?? []).map((char: any) => ({
+    ...char,
+    mode: char.mode ?? 'idle', // Add mode if missing
+  }));
+
+  return {
+    version: CURRENT_SAVE_VERSION,
+    timestamp: Date.now(),
+    party: migratedParty,
+    meso: old.meso ?? 0,
+    lastMapId: old.lastMapId ?? DEFAULT_MAP_ID,
+    equipInventory: old.equipInventory ?? [],
+    useInventory: old.useInventory ?? [],
+    etcInventory: old.etcInventory ?? [],
+    globalSkills: old.globalSkills ?? {},
     settings: old.settings ?? { ...DEFAULT_SETTINGS },
     statistics: old.statistics ?? { ...DEFAULT_STATISTICS },
   };
@@ -379,5 +434,31 @@ function createEmptyEquipment(): Equipment {
     cape: null,
     accessory: null,
     shield: null,
+  };
+}
+
+// ============================================================================
+// Debug Helper (Global)
+// ============================================================================
+
+/**
+ * Check current save data (for debugging in browser console)
+ * Usage: window.checkSaveData()
+ */
+if (typeof window !== 'undefined') {
+  (window as any).checkSaveData = () => {
+    const data = loadGame();
+    console.log('[SaveData Debug]', {
+      version: data.version,
+      timestamp: new Date(data.timestamp).toLocaleString(),
+      lastMapId: data.lastMapId,
+      mapName: data.lastMapId ? getMapById(data.lastMapId)?.name : 'none',
+      party: data.party.map(c => ({ name: c.name, level: c.level, job: c.job })),
+      meso: data.meso,
+      equipment: data.equipInventory.length,
+      use: data.useInventory.length,
+      etc: data.etcInventory.length,
+    });
+    return data;
   };
 }

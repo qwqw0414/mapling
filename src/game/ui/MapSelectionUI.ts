@@ -113,8 +113,11 @@ export class MapSelectionUI extends Container {
       },
     });
     closeText.anchor.set(0.5);
+    closeText.eventMode = 'none';
 
-    bg.on('pointerdown', () => {
+    button.eventMode = 'static';
+    button.cursor = 'pointer';
+    button.on('pointerdown', () => {
       this.options.onClose();
     });
 
@@ -127,47 +130,22 @@ export class MapSelectionUI extends Container {
     const maps = getFieldMaps();
     const panelX = (GAME_CONFIG.WIDTH - this.panelWidth) / 2;
     const panelY = (GAME_CONFIG.HEIGHT - this.panelHeight) / 2;
-    const startY = 10; // Start from relative position within scroll container
+    const MAP_ITEM_GAP = 6;
+    const PADDING_X = 15;
 
-    // Group maps by streetName > mapMark
-    const grouped = this.groupMapsByRegion(maps);
+    let currentY = 10;
 
-    let currentY = startY;
-
-    for (const [streetName, mapMarkGroups] of grouped.entries()) {
-      // Street name header
-      const streetHeader = this.createStreetHeader(streetName);
-      streetHeader.x = 20;
-      streetHeader.y = currentY;
-      this.scrollContainer.addChild(streetHeader);
-      currentY += 30;
-
-      for (const [mapMark, mapList] of mapMarkGroups.entries()) {
-        // Map mark subheader (if exists)
-        if (mapMark) {
-          const markHeader = this.createMapMarkHeader(mapMark);
-          markHeader.x = 35;
-          markHeader.y = currentY;
-          this.scrollContainer.addChild(markHeader);
-          currentY += 25;
-        }
-
-        // Map items
-        for (const map of mapList) {
-          const mapItem = this.createMapItem(map);
-          mapItem.x = mapMark ? 50 : 35;
-          mapItem.y = currentY;
-          this.scrollContainer.addChild(mapItem);
-          currentY += 58;
-        }
-      }
-
-      currentY += 10; // Gap between regions
+    for (const map of maps) {
+      const mapItem = this.createMapItem(map);
+      mapItem.x = PADDING_X;
+      mapItem.y = currentY;
+      this.scrollContainer.addChild(mapItem);
+      currentY += 58 + MAP_ITEM_GAP;
     }
 
     // Calculate max scroll
     const contentHeight = currentY;
-    const scrollAreaHeight = this.panelHeight - 70; // Panel height minus header
+    const scrollAreaHeight = this.panelHeight - 70;
     this.maxScrollY = Math.max(0, contentHeight - scrollAreaHeight);
 
     // Position scroll container
@@ -183,64 +161,9 @@ export class MapSelectionUI extends Container {
     this.contentContainer.addChild(this.scrollContainer);
   }
 
-  private groupMapsByRegion(maps: MapInfo[]): Map<string, Map<string, MapInfo[]>> {
-    const grouped = new Map<string, Map<string, MapInfo[]>>();
-
-    for (const map of maps) {
-      const streetName = map.streetName || '기타';
-      const mapMark = map.mapMark || '';
-
-      if (!grouped.has(streetName)) {
-        grouped.set(streetName, new Map());
-      }
-
-      const mapMarkGroups = grouped.get(streetName)!;
-      if (!mapMarkGroups.has(mapMark)) {
-        mapMarkGroups.set(mapMark, []);
-      }
-
-      mapMarkGroups.get(mapMark)!.push(map);
-    }
-
-    return grouped;
-  }
-
-  private createStreetHeader(streetName: string): Container {
-    const container = new Container();
-
-    const text = new Text({
-      text: streetName,
-      style: {
-        fontSize: 16,
-        fill: 0xffdd44,
-        fontWeight: 'bold',
-        fontFamily: 'Arial',
-      },
-    });
-
-    container.addChild(text);
-    return container;
-  }
-
-  private createMapMarkHeader(mapMark: string): Container {
-    const container = new Container();
-
-    const text = new Text({
-      text: `├─ ${mapMark}`,
-      style: {
-        fontSize: 14,
-        fill: 0xcccccc,
-        fontFamily: 'Arial',
-      },
-    });
-
-    container.addChild(text);
-    return container;
-  }
-
   private createMapItem(map: MapInfo): Container {
     const container = new Container();
-    const itemWidth = 370;
+    const itemWidth = this.panelWidth - 30;
     const itemHeight = 50;
     const paddingX = 12;
 
@@ -287,6 +210,7 @@ export class MapSelectionUI extends Container {
     });
     nameText.x = paddingX;
     nameText.y = 8;
+    nameText.eventMode = 'none';
     container.addChild(nameText);
 
     // Level range (next to map name)
@@ -303,6 +227,7 @@ export class MapSelectionUI extends Container {
     });
     levelText.x = nameText.x + nameText.width + 8;
     levelText.y = 10;
+    levelText.eventMode = 'none';
     container.addChild(levelText);
 
     // Monster list
@@ -324,6 +249,7 @@ export class MapSelectionUI extends Container {
       });
       monstersText.x = paddingX;
       monstersText.y = 30;
+      monstersText.eventMode = 'none';
       container.addChild(monstersText);
     }
 
@@ -339,6 +265,7 @@ export class MapSelectionUI extends Container {
       });
       currentLabel.x = itemWidth - currentLabel.width - paddingX;
       currentLabel.y = 10;
+      currentLabel.eventMode = 'none';
       container.addChild(currentLabel);
     }
 

@@ -29,7 +29,7 @@ interface CharacterCreationOptions {
 // ============================================================================
 
 const DEFAULT_STATS: Stats = {
-  str: 34,
+  str: 14,
   dex: 4,
   int: 4,
   luk: 4,
@@ -45,7 +45,7 @@ const PREVIEW_SIZE = 100;
 
 /**
  * Character creation UI with name input, hair/face selection, and preview.
- * Stats are auto-assigned (all 30 bonus to STR).
+ * Stats are auto-assigned (10 bonus to STR).
  */
 export class CharacterCreationUI extends Container {
   private readonly onConfirmCallback: (data: CharacterCreationData) => void;
@@ -54,8 +54,8 @@ export class CharacterCreationUI extends Container {
   private readonly panelWidth = PANEL_WIDTH;
   private readonly panelHeight = PANEL_HEIGHT;
 
-  // Keyboard handler reference for cleanup
-  private keydownHandler: ((e: KeyboardEvent) => void) | null = null;
+  // Hidden HTML input for IME support
+  private hiddenInput: HTMLInputElement | null = null;
 
   // Character data
   private characterName: string = '';
@@ -83,8 +83,8 @@ export class CharacterCreationUI extends Container {
     this.hairIndex = Math.floor(Math.random() * DEFAULT_HAIR_OPTIONS.length);
     this.faceIndex = Math.floor(Math.random() * DEFAULT_FACE_OPTIONS.length);
 
-    this.createUI();
     this.setupKeyboardInput();
+    this.createUI();
     this.loadPreview();
   }
 
@@ -100,6 +100,10 @@ export class CharacterCreationUI extends Container {
     overlay.eventMode = 'static';
     overlay.on('pointerdown', (e) => {
       e.stopPropagation();
+      // 패널 바깥 클릭 시에도 입력 포커스 유지
+      if (this.isInputActive) {
+        this.activateInput();
+      }
     });
     this.addChild(overlay);
 
@@ -108,6 +112,14 @@ export class CharacterCreationUI extends Container {
     panel.roundRect(0, 0, this.panelWidth, this.panelHeight, 12);
     panel.fill({ color: 0x1a1a1a });
     panel.stroke({ color: 0x4488ff, width: 3 });
+    panel.eventMode = 'static';
+    panel.on('pointerdown', (e) => {
+      e.stopPropagation();
+      // 패널 클릭 시에도 입력 포커스 유지
+      if (this.isInputActive) {
+        this.activateInput();
+      }
+    });
     this.addChild(panel);
 
     // Title
@@ -297,6 +309,7 @@ export class CharacterCreationUI extends Container {
     text.anchor.set(0.5);
     text.x = width / 2;
     text.y = height / 2;
+    text.eventMode = 'none';
     btn.addChild(text);
 
     btn.eventMode = 'static';
@@ -456,43 +469,57 @@ export class CharacterCreationUI extends Container {
 
   private activateInput(): void {
     this.isInputActive = true;
+    if (this.hiddenInput) {
+      this.hiddenInput.value = this.characterName;
+      // setTimeout으로 포커스를 지연시켜 캔버스 pointerdown 후 포커스를 되찾음
+      setTimeout(() => {
+        this.hiddenInput?.focus();
+      }, 0);
+    }
     this.updateNameDisplay();
   }
 
   private deactivateInput(): void {
     this.isInputActive = false;
+    if (this.hiddenInput) {
+      this.hiddenInput.blur();
+    }
     this.updateNameDisplay();
   }
 
   private setupKeyboardInput(): void {
-    const handleKeyDown = (e: KeyboardEvent): void => {
-      if (!this.isInputActive) return;
+    const input = document.createElement('input');
+    input.type = 'text';
+    input.maxLength = 12;
+    input.style.position = 'absolute';
+    input.style.left = '-9999px';
+    input.style.top = '0';
+    input.style.opacity = '0';
+    input.style.pointerEvents = 'none';
+    input.setAttribute('inputmode', 'text');
+    document.body.appendChild(input);
+    this.hiddenInput = input;
 
+    // Sync composed text from hidden input to PixiJS display
+    input.addEventListener('input', () => {
+      this.characterName = input.value;
+      this.updateNameDisplay();
+    });
+
+    input.addEventListener('keydown', (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
         this.deactivateInput();
         return;
       }
 
       if (e.key === 'Enter') {
+        // IME 조합 중이면 무시 (isComposing=true일 때는 Enter가 조합 확정용)
+        if (e.isComposing) return;
         this.deactivateInput();
         this.handleConfirm();
         return;
       }
-
-      if (e.key === 'Backspace') {
-        this.characterName = this.characterName.slice(0, -1);
-        this.updateNameDisplay();
-        return;
-      }
-
-      if (e.key.length === 1 && this.characterName.length < 12) {
-        this.characterName += e.key;
-        this.updateNameDisplay();
-      }
-    };
-
-    this.keydownHandler = handleKeyDown;
-    window.addEventListener('keydown', handleKeyDown);
+    });
   }
 
   private updateNameDisplay(): void {
@@ -549,6 +576,7 @@ export class CharacterCreationUI extends Container {
     label.anchor.set(0.5);
     label.x = width / 2;
     label.y = height / 2;
+    label.eventMode = 'none';
     button.addChild(label);
 
     button.eventMode = 'static';
@@ -612,9 +640,9 @@ export class CharacterCreationUI extends Container {
   // ============================================================================
 
   public override destroy(): void {
-    if (this.keydownHandler) {
-      window.removeEventListener('keydown', this.keydownHandler);
-      this.keydownHandler = null;
+    if (this.hiddenInput) {
+      this.hiddenInput.remove();
+      this.hiddenInput = null;
     }
 
     if (this.previewSprite) {

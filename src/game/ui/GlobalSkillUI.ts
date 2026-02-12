@@ -1,6 +1,6 @@
 import { Container, Graphics, Text } from 'pixi.js';
 import { GAME_CONFIG } from '@/constants/config';
-import { GLOBAL_SKILL_GROUPS, getSkillsByGroup } from '@/data/globalSkills';
+import { GLOBAL_SKILL_GROUPS, getSkillsByGroup, getSkillLevelUpCost } from '@/data/globalSkills';
 import { useGlobalSkillStore } from '@/stores/globalSkillStore';
 import { useCharacterStore } from '@/stores/characterStore';
 import type { GlobalSkillDef, SkillGroupId } from '@/types/globalSkill';
@@ -16,6 +16,17 @@ const TAB_HEIGHT = 40;
 const SKILL_ROW_HEIGHT = 56;
 const PADDING = 16;
 const SKILL_LIST_TOP = HEADER_HEIGHT + TAB_HEIGHT + 8;
+
+// Column layout (fixed x positions for alignment)
+const COL = {
+  NAME_X: 12,
+  LEVEL_X: 12,
+  BAR_X: 110,
+  BAR_WIDTH: 80,
+  DESC_X: 200,
+  BUTTON_WIDTH: 80,
+  BUTTON_MARGIN: 12,
+} as const;
 
 const COLORS = {
   OVERLAY: 0x000000,
@@ -145,7 +156,7 @@ export class GlobalSkillUI extends Container {
     // Meso display
     const currentMeso = useCharacterStore.getState().meso;
     this.mesoText = new Text({
-      text: `${this.formatMeso(currentMeso)} meso`,
+      text: `${this.formatMeso(currentMeso)} 메소`,
       style: {
         fontSize: 14,
         fill: COLORS.MESO_COLOR,
@@ -186,19 +197,20 @@ export class GlobalSkillUI extends Container {
       },
     });
     closeText.anchor.set(0.5);
+    closeText.eventMode = 'none';
 
-    bg.on('pointerdown', (e) => {
+    button.eventMode = 'static';
+    button.cursor = 'pointer';
+    button.on('pointerdown', (e) => {
       e.stopPropagation();
       this.options.onClose();
     });
-
-    bg.on('pointerover', () => {
+    button.on('pointerover', () => {
       bg.clear();
       bg.circle(0, 0, 14);
       bg.fill(0xff6666);
     });
-
-    bg.on('pointerout', () => {
+    button.on('pointerout', () => {
       bg.clear();
       bg.circle(0, 0, 14);
       bg.fill(0xff4444);
@@ -230,9 +242,6 @@ export class GlobalSkillUI extends Container {
       const tabBg = new Graphics();
       tabBg.roundRect(0, 4, tabWidth - 4, TAB_HEIGHT - 8, 6);
       tabBg.fill(isActive ? COLORS.TAB_ACTIVE : COLORS.TAB_INACTIVE);
-      tabBg.eventMode = 'static';
-      tabBg.cursor = 'pointer';
-
       const tabText = new Text({
         text: group.name,
         style: {
@@ -244,13 +253,17 @@ export class GlobalSkillUI extends Container {
       });
       tabText.x = (tabWidth - 4 - tabText.width) / 2;
       tabText.y = (TAB_HEIGHT - tabText.height) / 2;
+      tabText.eventMode = 'none';
 
       // Group color indicator
       const colorDot = new Graphics();
       colorDot.circle(tabText.x - 10, TAB_HEIGHT / 2, 4);
       colorDot.fill(group.color);
+      colorDot.eventMode = 'none';
 
-      tabBg.on('pointerdown', (e) => {
+      tabContainer.eventMode = 'static';
+      tabContainer.cursor = 'pointer';
+      tabContainer.on('pointerdown', (e) => {
         e.stopPropagation();
         this.setActiveGroup(group.id);
       });
@@ -332,7 +345,9 @@ export class GlobalSkillUI extends Container {
     const currentLevel = store.getSkillLevel(skill.id);
     const isMaxLevel = currentLevel >= skill.maxLevel;
     const currentMeso = useCharacterStore.getState().meso;
-    const canAfford = currentMeso >= skill.costPerLevel;
+    const levelUpCost = getSkillLevelUpCost(skill.id, currentLevel);
+    // TODO: 테스트 완료 후 원래 조건으로 복원할 것 (canAfford = currentMeso >= levelUpCost)
+    const canAfford = true;
 
     const row = new Container();
 
@@ -353,7 +368,7 @@ export class GlobalSkillUI extends Container {
         fontFamily: 'Arial',
       },
     });
-    nameText.x = 12;
+    nameText.x = COL.NAME_X;
     nameText.y = 6;
     row.addChild(nameText);
 
@@ -368,30 +383,28 @@ export class GlobalSkillUI extends Container {
         fontWeight: isMaxLevel ? 'bold' : 'normal',
       },
     });
-    levelText.x = 12;
+    levelText.x = COL.LEVEL_X;
     levelText.y = 28;
     row.addChild(levelText);
 
-    // Level progress bar
-    const barX = levelText.x + levelText.width + 10;
-    const barWidth = 80;
+    // Level progress bar (fixed position)
     const barHeight = 8;
     const barY = 32;
 
     const barBg = new Graphics();
-    barBg.roundRect(barX, barY, barWidth, barHeight, 3);
+    barBg.roundRect(COL.BAR_X, barY, COL.BAR_WIDTH, barHeight, 3);
     barBg.fill(COLORS.LEVEL_BAR_BG);
     row.addChild(barBg);
 
     if (currentLevel > 0) {
-      const fillWidth = Math.floor((currentLevel / skill.maxLevel) * barWidth);
+      const fillWidth = Math.floor((currentLevel / skill.maxLevel) * COL.BAR_WIDTH);
       const barFill = new Graphics();
-      barFill.roundRect(barX, barY, fillWidth, barHeight, 3);
+      barFill.roundRect(COL.BAR_X, barY, fillWidth, barHeight, 3);
       barFill.fill(isMaxLevel ? COLORS.MAX_LEVEL_COLOR : COLORS.LEVEL_BAR_FILL);
       row.addChild(barFill);
     }
 
-    // Effect description
+    // Effect description (fixed position)
     const effectText = this.getEffectDescription(skill, currentLevel);
     const descText = new Text({
       text: effectText,
@@ -401,11 +414,11 @@ export class GlobalSkillUI extends Container {
         fontFamily: 'Arial',
       },
     });
-    descText.x = barX + barWidth + 12;
+    descText.x = COL.DESC_X;
     descText.y = 10;
     row.addChild(descText);
 
-    // Current effect value
+    // Current effect value (fixed position)
     const currentEffect = this.getCurrentEffectText(skill, currentLevel);
     const currentEffectText = new Text({
       text: currentEffect,
@@ -415,14 +428,13 @@ export class GlobalSkillUI extends Container {
         fontFamily: 'Arial',
       },
     });
-    currentEffectText.x = barX + barWidth + 12;
+    currentEffectText.x = COL.DESC_X;
     currentEffectText.y = 28;
     row.addChild(currentEffectText);
 
-    // Level Up button
-    const buttonWidth = 80;
+    // Level Up button (fixed position)
+    const buttonX = width - COL.BUTTON_WIDTH - COL.BUTTON_MARGIN;
     const buttonHeight = 32;
-    const buttonX = width - buttonWidth - 12;
     const buttonY = (SKILL_ROW_HEIGHT - 4 - buttonHeight) / 2;
 
     if (isMaxLevel) {
@@ -435,7 +447,7 @@ export class GlobalSkillUI extends Container {
           fontFamily: 'Arial',
         },
       });
-      maxBadge.x = buttonX + (buttonWidth - maxBadge.width) / 2;
+      maxBadge.x = buttonX + (COL.BUTTON_WIDTH - maxBadge.width) / 2;
       maxBadge.y = buttonY + (buttonHeight - maxBadge.height) / 2;
       row.addChild(maxBadge);
     } else {
@@ -443,9 +455,10 @@ export class GlobalSkillUI extends Container {
         skill,
         buttonX,
         buttonY,
-        buttonWidth,
+        COL.BUTTON_WIDTH,
         buttonHeight,
         canAfford,
+        levelUpCost,
       );
       row.addChild(buttonContainer);
     }
@@ -460,22 +473,23 @@ export class GlobalSkillUI extends Container {
     width: number,
     height: number,
     canAfford: boolean,
+    cost: number,
   ): Container {
     const container = new Container();
     container.x = x;
     container.y = y;
+    container.eventMode = 'static';
+    container.cursor = canAfford ? 'pointer' : 'default';
 
     const bgColor = canAfford ? COLORS.BUTTON_ACTIVE : COLORS.BUTTON_DISABLED;
 
     const bg = new Graphics();
     bg.roundRect(0, 0, width, height, 5);
     bg.fill(bgColor);
-    bg.eventMode = 'static';
-    bg.cursor = canAfford ? 'pointer' : 'default';
 
-    // Cost text
+    // Cost text (dynamic based on current level)
     const costText = new Text({
-      text: `${this.formatMeso(skill.costPerLevel)}`,
+      text: `${this.formatMeso(cost)}`,
       style: {
         fontSize: 11,
         fill: canAfford ? COLORS.MESO_COLOR : 0x777777,
@@ -484,6 +498,7 @@ export class GlobalSkillUI extends Container {
     });
     costText.x = (width - costText.width) / 2;
     costText.y = 3;
+    costText.eventMode = 'none';
 
     // "UP" label
     const upText = new Text({
@@ -497,19 +512,20 @@ export class GlobalSkillUI extends Container {
     });
     upText.x = (width - upText.width) / 2;
     upText.y = 17;
+    upText.eventMode = 'none';
 
     if (canAfford) {
-      bg.on('pointerover', () => {
+      container.on('pointerover', () => {
         bg.clear();
         bg.roundRect(0, 0, width, height, 5);
         bg.fill(COLORS.BUTTON_HOVER);
       });
-      bg.on('pointerout', () => {
+      container.on('pointerout', () => {
         bg.clear();
         bg.roundRect(0, 0, width, height, 5);
         bg.fill(COLORS.BUTTON_ACTIVE);
       });
-      bg.on('pointerdown', (e) => {
+      container.on('pointerdown', (e) => {
         e.stopPropagation();
         this.handleLevelUp(skill.id);
       });
@@ -536,7 +552,7 @@ export class GlobalSkillUI extends Container {
     // Update meso display
     if (this.mesoText) {
       const currentMeso = useCharacterStore.getState().meso;
-      this.mesoText.text = `${this.formatMeso(currentMeso)} meso`;
+      this.mesoText.text = `${this.formatMeso(currentMeso)} 메소`;
     }
 
     // Re-render skill list
@@ -575,15 +591,13 @@ export class GlobalSkillUI extends Container {
         return `+${value}${skill.unit}`;
       case 'spawnInterval':
         return `-${value}${skill.unit}`;
-      case 'initialSpawnRatio':
-        return `+${Math.round(value * 100)}${skill.unit}`;
       case 'expRate':
       case 'mesoRate':
-        return `+${Math.round(value * 100)}${skill.unit}`;
       case 'equipDropRate':
       case 'useDropRate':
       case 'etcDropRate':
-        return `+${Math.round(value * 100)}${skill.unit}`;
+        // Display as multiplier (e.g., 1.5x, 2x, 2.5x)
+        return `${(1 + value).toFixed(1)}${skill.unit}`;
       case 'mesoDropChance':
         return `+${value}${skill.unit}`;
       default:

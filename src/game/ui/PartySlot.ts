@@ -2,7 +2,6 @@ import { Container, Graphics, Text, Sprite, Texture } from 'pixi.js';
 import { GifSprite, GifSource } from 'pixi.js/gif';
 import { SLOT_CONFIG } from '@/constants/config';
 import { StatusBar } from './StatusBar';
-import { SkillBar } from './SkillBar';
 import { AssetManager } from '@/game/systems/AssetManager';
 import { getRequiredExp } from '@/data/expTable';
 import { getJobData } from '@/data/jobs';
@@ -37,16 +36,16 @@ interface EquipSlotDef {
 
 const EQUIP_SLOT_DEFS: EquipSlotDef[] = [
   // Row 0: 머리 / 갑옷
-  { slot: 'hat',       label: '모자',   col: 0, row: 0, equippedColor: 0x4466AA },
-  { slot: 'top',       label: '상의',   col: 1, row: 0, equippedColor: 0x4466AA },
-  { slot: 'bottom',    label: '하의',   col: 2, row: 0, equippedColor: 0x4466AA },
+  { slot: 'hat', label: '모자', col: 0, row: 0, equippedColor: 0x4466AA },
+  { slot: 'top', label: '상의', col: 1, row: 0, equippedColor: 0x4466AA },
+  { slot: 'bottom', label: '하의', col: 2, row: 0, equippedColor: 0x4466AA },
   // Row 1: 손 장비
-  { slot: 'weapon',    label: '무기',   col: 0, row: 1, equippedColor: 0xAA4444 },
-  { slot: 'gloves',    label: '장갑',   col: 1, row: 1, equippedColor: 0x4466AA },
-  { slot: 'shield',    label: '방패',   col: 2, row: 1, equippedColor: 0x4466AA },
+  { slot: 'weapon', label: '무기', col: 0, row: 1, equippedColor: 0xAA4444 },
+  { slot: 'gloves', label: '장갑', col: 1, row: 1, equippedColor: 0x4466AA },
+  { slot: 'shield', label: '방패', col: 2, row: 1, equippedColor: 0x4466AA },
   // Row 2: 발 / 기타
-  { slot: 'shoes',     label: '신발',   col: 0, row: 2, equippedColor: 0x4466AA },
-  { slot: 'cape',      label: '망토',   col: 1, row: 2, equippedColor: 0x6644AA },
+  { slot: 'shoes', label: '신발', col: 0, row: 2, equippedColor: 0x4466AA },
+  { slot: 'cape', label: '망토', col: 1, row: 2, equippedColor: 0x6644AA },
   { slot: 'accessory', label: '장신구', col: 2, row: 2, equippedColor: 0xAAAA44 },
 ];
 
@@ -115,7 +114,6 @@ export class PartySlot extends Container {
   private hpBar: StatusBar | null = null;
   private mpBar: StatusBar | null = null;
   private expBar: StatusBar | null = null;
-  private skillBar: SkillBar | null = null;
   private nameText: Text | null = null;
   private levelText: Text | null = null;
   private statViewButton: Container | null = null;
@@ -123,6 +121,11 @@ export class PartySlot extends Container {
 
   // Current mode tracking for enable/disable
   private currentMode: CharacterMode = 'idle';
+
+  // Body-left-margin: the character body's approximate offset from the image's LEFT edge.
+  // Roughly constant across all weapons/animations because equipment extends rightward.
+  // Derived from unarmed idle GIF analysis (~14px transparent margin + body start).
+  private static readonly BODY_LEFT_MARGIN = 24;
 
   // Stored equip slot bounds for hit detection (relative to equipContainer)
   private equipSlotBounds: Array<{ slot: EquipSlot; x: number; y: number; size: number }> = [];
@@ -260,8 +263,11 @@ export class PartySlot extends Container {
 
   /**
    * Set character sprite (GIF animation or static texture)
+   * With anchor(1,1), the body's distance from the image LEFT edge is roughly constant
+   * (equipment extends rightward). So: sprite.x = baseX + gifWidth keeps the body fixed.
+   * Per-animation manual offsets handle any residual error.
    * @param gifSource - GIF source to display
-   * @param animation - Animation name for per-animation position offset correction
+   * @param animation - Animation name used for per-animation manual offset lookup
    */
   public setCharacterSprite(gifSource: GifSource | null, animation?: CharacterAnimation): void {
     // Remove existing sprite
@@ -273,8 +279,12 @@ export class PartySlot extends Container {
 
     if (!gifSource) return;
 
-    const spriteHeight = this.slotHeight * SLOT_CONFIG.SPRITE_HEIGHT_RATIO;
-    const spriteBottomY = this.padding + spriteHeight;
+    // Sprite bottom aligns just above the name/level text area
+    const barHeight = SLOT_CONFIG.STAT_BAR.HEIGHT;
+    const barGap = SLOT_CONFIG.STAT_BAR.GAP;
+    const totalBarsHeight = barHeight * 3 + barGap * 2;
+    const nameHeight = 20;
+    const spriteBottomY = this.slotHeight - this.padding - totalBarsHeight - nameHeight - 10;
 
     // Create GIF sprite - use original size without scaling
     const gifSprite = new GifSprite({
@@ -282,13 +292,23 @@ export class PartySlot extends Container {
       autoPlay: true,
       loop: true,
     });
-    // Anchor at bottom-right for consistent animation alignment
+
+    // Anchor at bottom-right
     gifSprite.anchor.set(1, 1);
 
-    // Apply per-animation sprite offset correction
-    const offset = animation ? getAnimationSpriteOffset(animation) : { x: 0, y: 0 };
-    gifSprite.x = this.slotWidth / 2 + 30 + offset.x;
-    gifSprite.y = spriteBottomY + offset.y;
+    // Position: body is ~BODY_LEFT_MARGIN px from the image's left edge (constant).
+    // With anchor(1,1), left edge = sprite.x - width, so body = sprite.x - width + MARGIN.
+    // To keep body at a fixed slot position: sprite.x = targetBodyX - MARGIN + width
+    // spriteBaseX = slotCenter - BODY_LEFT_MARGIN (the constant part)
+    const spriteBaseX = this.slotWidth / 2 - PartySlot.BODY_LEFT_MARGIN;
+
+    // Per-animation manual fine-tuning
+    const manualOffset = animation
+      ? getAnimationSpriteOffset(animation)
+      : { x: 0, y: 0 };
+
+    gifSprite.x = spriteBaseX + gifSource.width + manualOffset.x;
+    gifSprite.y = spriteBottomY + manualOffset.y;
 
     this.characterSprite = gifSprite;
     this.characterContainer.addChildAt(gifSprite, 0);
@@ -379,18 +399,19 @@ export class PartySlot extends Container {
     // Clear existing UI
     this.characterContainer.removeChildren();
 
-    // Calculate layout areas
-    const spriteHeight = this.slotHeight * SLOT_CONFIG.SPRITE_HEIGHT_RATIO;
-    const statsStartY = this.padding + spriteHeight;
+    // Calculate layout anchored to bottom
+    const barHeight = SLOT_CONFIG.STAT_BAR.HEIGHT;
+    const barGap = SLOT_CONFIG.STAT_BAR.GAP;
+    const totalBarsHeight = barHeight * 3 + barGap * 2;
+    const nameHeight = 20;
+    const barsBottomY = this.slotHeight - this.padding - totalBarsHeight;
+    const nameY = barsBottomY - nameHeight;
 
     // Character name & level
-    this.createCharacterInfo(character, statsStartY);
+    this.createCharacterInfo(character, nameY);
 
     // Status bars (HP/MP/EXP)
-    this.createStatusBars(character, statsStartY + 20);
-
-    // Skill bar
-    this.createSkillBar(character, statsStartY + 20 + 3 * (SLOT_CONFIG.STAT_BAR.HEIGHT + SLOT_CONFIG.STAT_BAR.GAP) + 5);
+    this.createStatusBars(character, barsBottomY);
 
     // View buttons (top-right area, inside characterContainer)
     this.createViewButtons();
@@ -460,32 +481,10 @@ export class PartySlot extends Container {
     this.expBar.x = this.padding;
     this.expBar.y = startY + (SLOT_CONFIG.STAT_BAR.HEIGHT + barGap) * 2;
 
-    // Calculate required exp (simplified formula)
+    // Calculate required exp
     const requiredExp = this.calculateRequiredExp(character.level);
     this.expBar.updateValues(character.exp, requiredExp);
     this.characterContainer.addChild(this.expBar);
-  }
-
-  private createSkillBar(character: PartyCharacter, y: number): void {
-    this.skillBar = new SkillBar();
-
-    // Center skill bar
-    const skillBarWidth = this.skillBar.getTotalWidth();
-    this.skillBar.x = (this.slotWidth - skillBarWidth) / 2;
-    this.skillBar.y = y;
-
-    // Initialize skill slots with character's equipped skills
-    for (let i = 0; i < character.equippedSkillSlots.length && i < 6; i++) {
-      const skillId = character.equippedSkillSlots[i];
-      if (skillId !== null) {
-        this.skillBar.updateSkillSlot(i, {
-          skillId,
-          isActive: false,
-        });
-      }
-    }
-
-    this.characterContainer.addChild(this.skillBar);
   }
 
   private calculateRequiredExp(level: number): number {
@@ -527,6 +526,7 @@ export class PartySlot extends Container {
     this.modeToggleLabel.anchor.set(0.5, 0);
     this.modeToggleLabel.x = toggleWidth / 2;
     this.modeToggleLabel.y = toggleHeight + 2;
+    this.modeToggleLabel.eventMode = 'none';
     this.modeToggleContainer.addChild(this.modeToggleLabel);
 
     this.renderModeToggle(character.mode, toggleWidth, toggleHeight, thumbSize);
@@ -638,6 +638,7 @@ export class PartySlot extends Container {
     label.anchor.set(0.5);
     label.x = width / 2;
     label.y = height / 2;
+    label.eventMode = 'none';
     button.addChild(label);
 
     button.eventMode = 'static';
@@ -981,6 +982,7 @@ export class PartySlot extends Container {
       slotLabel.anchor.set(0.5);
       slotLabel.x = size / 2;
       slotLabel.y = size / 2;
+      slotLabel.eventMode = 'none';
       slotContainer.addChild(slotLabel);
     }
 
@@ -1329,6 +1331,7 @@ export class PartySlot extends Container {
     label.anchor.set(0.5);
     label.x = buttonWidth / 2;
     label.y = buttonHeight / 2;
+    label.eventMode = 'none';
     button.addChild(label);
 
     button.eventMode = 'static';

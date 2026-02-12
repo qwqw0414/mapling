@@ -1,5 +1,5 @@
 import { createStore } from 'zustand/vanilla';
-import { getGlobalSkillById } from '@/data/globalSkills';
+import { getGlobalSkillById, getSkillLevelUpCost } from '@/data/globalSkills';
 import { useCharacterStore } from './characterStore';
 import type { GlobalSkillState } from '@/types/globalSkill';
 
@@ -52,8 +52,12 @@ export const useGlobalSkillStore = createStore<GlobalSkillStore>((set, get) => (
     const currentLevel = get().skillLevels[skillId] ?? 0;
     if (currentLevel >= skillDef.maxLevel) return false;
 
-    const isSuccess = useCharacterStore.getState().spendMeso(skillDef.costPerLevel);
-    if (!isSuccess) return false;
+    // TODO: 테스트 완료 후 메소 차감 로직 복원할 것
+    const cost = getSkillLevelUpCost(skillId, currentLevel);
+    const charStore = useCharacterStore.getState();
+    if (charStore.meso >= cost) {
+      charStore.spendMeso(cost);
+    }
 
     set((state) => ({
       skillLevels: {

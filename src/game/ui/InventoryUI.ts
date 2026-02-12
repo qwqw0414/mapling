@@ -17,6 +17,7 @@ interface InventoryUIOptions {
   onItemSwap?: (category: ItemCategory, fromIndex: number, toIndex: number) => void;
   onDragOutside?: (slotIndex: number, item: InventorySlot, globalX: number, globalY: number) => void;
   onDoubleClick?: (slotIndex: number, item: InventorySlot) => void;
+  onItemDelete?: (slotIndex: number, item: InventorySlot) => void;
 }
 
 interface TabButton {
@@ -45,6 +46,8 @@ export class InventoryUI extends Container {
   private readonly gridContainer: Container;
   private readonly gridMask: Graphics;
   private readonly scrollContainer: Container;
+  private readonly trashBin: Container;
+  private isOverTrashBin: boolean = false;
 
   // State
   private currentTab: InventoryTab = 'equip';
@@ -78,6 +81,7 @@ export class InventoryUI extends Container {
   private readonly onItemSwapCallback?: (category: ItemCategory, fromIndex: number, toIndex: number) => void;
   private readonly onDragOutsideCallback?: (slotIndex: number, item: InventorySlot, globalX: number, globalY: number) => void;
   private readonly onDoubleClickCallback?: (slotIndex: number, item: InventorySlot) => void;
+  private readonly onItemDeleteCallback?: (slotIndex: number, item: InventorySlot) => void;
 
   constructor(options: InventoryUIOptions) {
     super();
@@ -89,6 +93,7 @@ export class InventoryUI extends Container {
     this.onItemSwapCallback = options.onItemSwap;
     this.onDragOutsideCallback = options.onDragOutside;
     this.onDoubleClickCallback = options.onDoubleClick;
+    this.onItemDeleteCallback = options.onItemDelete;
 
     // Background
     this.background = new Graphics();
@@ -122,9 +127,14 @@ export class InventoryUI extends Container {
     this.scrollContainer = new Container();
     this.gridContainer.addChild(this.scrollContainer);
 
+    // Trash bin
+    this.trashBin = new Container();
+    this.addChild(this.trashBin);
+
     // Initialize
     this.drawBackground();
     this.createTabs();
+    this.createTrashBin();
     this.updateMesoText();
     this.createGridSlots();
     this.setupScrolling();
@@ -222,6 +232,7 @@ export class InventoryUI extends Container {
       },
     });
     text.anchor.set(0.5, 0.5);
+    text.eventMode = 'none';
     container.addChild(text);
 
     container.eventMode = 'static';
@@ -233,38 +244,135 @@ export class InventoryUI extends Container {
 
   private layoutTabs(): void {
     const padding = INVENTORY_CONFIG.TAB_PADDING;
-    const tabWidth = Math.floor((this.uiWidth - padding * 2) / 3);
+    const tabGap = INVENTORY_CONFIG.TAB_GAP;
+    const tabCount = this.tabButtons.length;
     const tabHeight = INVENTORY_CONFIG.TAB_HEIGHT - padding * 2;
 
-    let x = padding;
-    for (const button of this.tabButtons) {
+    const totalAvailable = this.uiWidth - padding * 2;
+    const totalGaps = tabGap * (tabCount - 1);
+
+    for (let i = 0; i < tabCount; i++) {
+      const button = this.tabButtons[i];
+
+      // Distribute fractional pixels evenly across tabs
+      const tabStart = Math.round(i * (totalAvailable - totalGaps) / tabCount);
+      const tabEnd = Math.round((i + 1) * (totalAvailable - totalGaps) / tabCount);
+      const tabWidth = tabEnd - tabStart;
+      const x = padding + tabStart + i * tabGap;
+
       button.container.x = x;
       button.container.y = padding;
 
       button.background.clear();
-      button.background.roundRect(0, 0, tabWidth - 2, tabHeight, 3);
+      button.background.roundRect(0, 0, tabWidth, tabHeight, 3);
 
-      button.text.x = (tabWidth - 2) / 2;
+      button.text.x = tabWidth / 2;
       button.text.y = tabHeight / 2;
-
-      x += tabWidth;
     }
   }
 
   private updateTabStyles(): void {
-    for (const button of this.tabButtons) {
+    const padding = INVENTORY_CONFIG.TAB_PADDING;
+    const tabGap = INVENTORY_CONFIG.TAB_GAP;
+    const tabCount = this.tabButtons.length;
+    const tabHeight = INVENTORY_CONFIG.TAB_HEIGHT - padding * 2;
+    const totalAvailable = this.uiWidth - padding * 2;
+    const totalGaps = tabGap * (tabCount - 1);
+
+    for (let i = 0; i < tabCount; i++) {
+      const button = this.tabButtons[i];
       const isActive = button.tab === this.currentTab;
       const color = isActive
         ? INVENTORY_CONFIG.TAB_ACTIVE_COLOR
         : INVENTORY_CONFIG.TAB_INACTIVE_COLOR;
 
-      button.background.clear();
-      const tabWidth = Math.floor((this.uiWidth - INVENTORY_CONFIG.TAB_PADDING * 2) / 3);
-      const tabHeight = INVENTORY_CONFIG.TAB_HEIGHT - INVENTORY_CONFIG.TAB_PADDING * 2;
+      const tabStart = Math.round(i * (totalAvailable - totalGaps) / tabCount);
+      const tabEnd = Math.round((i + 1) * (totalAvailable - totalGaps) / tabCount);
+      const tabWidth = tabEnd - tabStart;
 
-      button.background.roundRect(0, 0, tabWidth - 2, tabHeight, 3);
+      button.background.clear();
+      button.background.roundRect(0, 0, tabWidth, tabHeight, 3);
       button.background.fill({ color, alpha: isActive ? 1 : 0.5 });
     }
+  }
+
+  // ============================================================================
+  // Private Methods - Trash Bin
+  // ============================================================================
+
+  private createTrashBin(): void {
+    const size = 24;
+    const padding = INVENTORY_CONFIG.PADDING;
+
+    // Background
+    const bg = new Graphics();
+    bg.roundRect(0, 0, size, size, 3);
+    bg.fill({ color: INVENTORY_CONFIG.SLOT_BACKGROUND_COLOR });
+    bg.stroke({ color: INVENTORY_CONFIG.SLOT_BORDER_COLOR, width: 1 });
+    this.trashBin.addChild(bg);
+
+    // Trash icon (simple trash can shape, scaled down)
+    const icon = new Graphics();
+    
+    // Lid
+    icon.rect(5, 5, 14, 1.5);
+    icon.fill({ color: 0xAAAAAA });
+    
+    // Handle
+    icon.moveTo(10.5, 5);
+    icon.lineTo(10.5, 3.5);
+    icon.arc(12, 3.5, 1.5, Math.PI, 0, false);
+    icon.lineTo(13.5, 5);
+    icon.stroke({ color: 0xAAAAAA, width: 1 });
+    
+    // Body
+    icon.moveTo(6.5, 6.5);
+    icon.lineTo(7, 18);
+    icon.lineTo(17, 18);
+    icon.lineTo(17.5, 6.5);
+    icon.closePath();
+    icon.fill({ color: 0x666666 });
+    icon.stroke({ color: 0xAAAAAA, width: 0.8 });
+    
+    // Vertical lines inside
+    icon.moveTo(9.5, 8);
+    icon.lineTo(9.5, 16.5);
+    icon.stroke({ color: 0xAAAAAA, width: 0.8 });
+    
+    icon.moveTo(12, 8);
+    icon.lineTo(12, 16.5);
+    icon.stroke({ color: 0xAAAAAA, width: 0.8 });
+    
+    icon.moveTo(14.5, 8);
+    icon.lineTo(14.5, 16.5);
+    icon.stroke({ color: 0xAAAAAA, width: 0.8 });
+    
+    icon.eventMode = 'none';
+    this.trashBin.addChild(icon);
+
+    // Position at bottom left
+    this.trashBin.x = padding;
+    this.trashBin.y = this.uiHeight - size - padding;
+
+    // Make trash bin visible but don't need event listeners
+    // (we check position manually in updateDropTarget)
+    this.trashBin.eventMode = 'none';
+  }
+
+  private highlightTrashBin(highlight: boolean): void {
+    const bg = this.trashBin.children[0] as Graphics;
+    const size = 24;
+    
+    bg.clear();
+    bg.roundRect(0, 0, size, size, 3);
+    bg.fill({ 
+      color: highlight ? 0xFF6666 : INVENTORY_CONFIG.SLOT_BACKGROUND_COLOR,
+      alpha: highlight ? 0.8 : 1
+    });
+    bg.stroke({ 
+      color: highlight ? 0xFF0000 : INVENTORY_CONFIG.SLOT_BORDER_COLOR, 
+      width: highlight ? 2 : 1 
+    });
   }
 
   // ============================================================================
@@ -294,16 +402,7 @@ export class InventoryUI extends Container {
   }
 
   private formatMeso(amount: number): string {
-    if (amount >= 1000000000) {
-      return `${(amount / 1000000000).toFixed(1)}B`;
-    }
-    if (amount >= 1000000) {
-      return `${(amount / 1000000).toFixed(1)}M`;
-    }
-    if (amount >= 1000) {
-      return `${(amount / 1000).toFixed(1)}K`;
-    }
-    return amount.toLocaleString();
+    return `${Math.floor(amount).toLocaleString()} 메소`;
   }
 
   // ============================================================================
@@ -417,6 +516,7 @@ export class InventoryUI extends Container {
           countText.anchor.set(1, 1);
           countText.x = slotSize - 2;
           countText.y = slotSize - 2;
+          countText.eventMode = 'none';
           slot.addChild(countText);
         }
       }
@@ -447,12 +547,10 @@ export class InventoryUI extends Container {
       iconSprite.x = slotSize / 2;
       iconSprite.y = slotSize / 2;
 
-      // Scale to fit slot
-      const maxSize = slotSize - 4;
-      if (iconSprite.width > maxSize || iconSprite.height > maxSize) {
-        const scale = maxSize / Math.max(iconSprite.width, iconSprite.height);
-        iconSprite.scale.set(scale);
-      }
+      // Scale all icons to consistent size within slot
+      const targetSize = slotSize - 6;
+      const scale = targetSize / Math.max(iconSprite.width, iconSprite.height);
+      iconSprite.scale.set(scale);
 
       slot.addChildAt(iconSprite, 0);
     } else {
@@ -507,17 +605,25 @@ export class InventoryUI extends Container {
 
   private onGlobalPointerUp = (e: FederatedPointerEvent): void => {
     if (this.isDragging && this.dragStartIndex !== -1) {
-      const dropIndex = this.getSlotIndexAtPosition(e.global.x, e.global.y);
-      if (dropIndex !== -1 && dropIndex !== this.dragStartIndex) {
-        // Drop inside inventory -> swap
-        if (this.onItemSwapCallback) {
-          this.onItemSwapCallback(this.currentTab, this.dragStartIndex, dropIndex);
+      const dragItem = this.items[this.dragStartIndex];
+      
+      // Check if dropped on trash bin
+      if (this.isOverTrashBin && dragItem) {
+        if (this.onItemDeleteCallback) {
+          this.onItemDeleteCallback(this.dragStartIndex, dragItem);
         }
-      } else if (dropIndex === -1) {
-        // Drop outside inventory -> notify parent for cross-component drop
-        const dragItem = this.items[this.dragStartIndex];
-        if (dragItem && this.onDragOutsideCallback) {
-          this.onDragOutsideCallback(this.dragStartIndex, dragItem, e.global.x, e.global.y);
+      } else {
+        const dropIndex = this.getSlotIndexAtPosition(e.global.x, e.global.y);
+        if (dropIndex !== -1 && dropIndex !== this.dragStartIndex) {
+          // Drop inside inventory -> swap
+          if (this.onItemSwapCallback) {
+            this.onItemSwapCallback(this.currentTab, this.dragStartIndex, dropIndex);
+          }
+        } else if (dropIndex === -1) {
+          // Drop outside inventory -> notify parent for cross-component drop
+          if (dragItem && this.onDragOutsideCallback) {
+            this.onDragOutsideCallback(this.dragStartIndex, dragItem, e.global.x, e.global.y);
+          }
         }
       }
     } else if (!this.isDragging && this.dragStartIndex !== -1) {
@@ -633,11 +739,10 @@ export class InventoryUI extends Container {
       iconSprite.x = slotSize / 2;
       iconSprite.y = slotSize / 2;
 
-      const maxSize = slotSize - 6;
-      if (iconSprite.width > maxSize || iconSprite.height > maxSize) {
-        const scale = maxSize / Math.max(iconSprite.width, iconSprite.height);
-        iconSprite.scale.set(scale);
-      }
+      // Scale all icons to consistent size within ghost
+      const targetSize = slotSize - 6;
+      const scale = targetSize / Math.max(iconSprite.width, iconSprite.height);
+      iconSprite.scale.set(scale);
 
       this.dragGhost.addChildAt(iconSprite, 1);
     } else {
@@ -669,15 +774,31 @@ export class InventoryUI extends Container {
   }
 
   private updateDropTarget(globalX: number, globalY: number): void {
-    // Clear all highlights first
+    // Check if over trash bin
+    const localPos = this.toLocal({ x: globalX, y: globalY });
+    const trashBinSize = 24;
+    const isOverTrash = 
+      localPos.x >= this.trashBin.x &&
+      localPos.x <= this.trashBin.x + trashBinSize &&
+      localPos.y >= this.trashBin.y &&
+      localPos.y <= this.trashBin.y + trashBinSize;
+
+    if (isOverTrash !== this.isOverTrashBin) {
+      this.isOverTrashBin = isOverTrash;
+      this.highlightTrashBin(isOverTrash);
+    }
+
+    // Clear all slot highlights first
     for (let i = 0; i < this.slotGraphics.length; i++) {
       this.highlightSlot(i, false);
     }
 
-    // Highlight the slot under cursor
-    const targetIndex = this.getSlotIndexAtPosition(globalX, globalY);
-    if (targetIndex !== -1 && targetIndex !== this.dragStartIndex) {
-      this.highlightSlot(targetIndex, true);
+    // Highlight the slot under cursor (only if not over trash bin)
+    if (!this.isOverTrashBin) {
+      const targetIndex = this.getSlotIndexAtPosition(globalX, globalY);
+      if (targetIndex !== -1 && targetIndex !== this.dragStartIndex) {
+        this.highlightSlot(targetIndex, true);
+      }
     }
   }
 
@@ -728,6 +849,10 @@ export class InventoryUI extends Container {
     for (let i = 0; i < this.slotGraphics.length; i++) {
       this.highlightSlot(i, false);
     }
+
+    // Reset trash bin highlight
+    this.isOverTrashBin = false;
+    this.highlightTrashBin(false);
 
     this.isDragging = false;
     this.dragStartIndex = -1;

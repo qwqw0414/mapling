@@ -175,7 +175,8 @@ export function getRandomAttackAnimation(weaponId: number | null): CharacterAnim
   if (!def) return DEFAULT_ATTACK_ANIMATION;
 
   const animations = def.attackAnimations;
-  const index = Math.floor(Math.random() * animations.length);
+  // const index = Math.floor(Math.random() * animations.length);
+  const index = 0;
   return animations[index];
 }
 

@@ -200,12 +200,13 @@ export function buildLookCacheKey(look: CharacterLook, animation: CharacterAnima
 }
 
 // ============================================================================
-// Animation Sprite Offset (per-animation position correction)
+// Animation Sprite Offset (per-animation manual fine-tuning)
 // ============================================================================
 
 /**
- * Per-animation X/Y offset to correct sprite position shift
- * when switching between animations with different GIF sizes.
+ * Per-animation X/Y offset for manual fine-tuning on top of dynamic correction.
+ * Dynamic correction handles most of the position shift automatically,
+ * these offsets handle the remaining ~1-5px residual error per animation.
  *
  * Usage:
  *   1. Set offsets in ANIMATION_SPRITE_OFFSETS below
@@ -220,13 +221,6 @@ export interface AnimationSpriteOffset {
   y: number;
 }
 
-/**
- * Offset map for each animation type.
- * Adjust values here to fix position jumps between animations.
- *
- * Example: if swingO1 appears 5px too far right and 3px too high,
- *          set swingO1: { x: -5, y: 3 }
- */
 const ANIMATION_SPRITE_OFFSETS: Partial<Record<CharacterAnimation, AnimationSpriteOffset>> = {
   // -- Idle / Standing --
   // stand1: { x: 0, y: 0 },
@@ -234,16 +228,16 @@ const ANIMATION_SPRITE_OFFSETS: Partial<Record<CharacterAnimation, AnimationSpri
   // alert:  { x: 0, y: 0 },
 
   // -- One-handed swing --
-  // swingO1: { x: 0, y: 0 },
-  // swingO2: { x: 0, y: 0 },
-  // swingO3: { x: 0, y: 0 },
-  // swingOF: { x: 0, y: 0 },
+  swingO1: { x: -20, y: 5 },
+  swingO2: { x: -5, y: 10 },
+  swingO3: { x: -5, y: 0 },
+  swingOF: { x: 20, y: 20 },
 
   // -- Two-handed swing --
-  // swingT1: { x: 0, y: 0 },
-  // swingT2: { x: 0, y: 0 },
-  // swingT3: { x: 0, y: 0 },
-  // swingTF: { x: 0, y: 0 },
+  swingT1: { x: -38, y: 13 },
+  swingT2: { x: -10, y: 12 },
+  swingT3: { x: -10, y: 10 },
+  swingTF: { x: 0, y: 20 },
 
   // -- Polearm swing --
   // swingP1: { x: 0, y: 0 },
@@ -256,7 +250,7 @@ const ANIMATION_SPRITE_OFFSETS: Partial<Record<CharacterAnimation, AnimationSpri
   // stabOF: { x: 0, y: 0 },
 
   // -- Two-handed stab --
-  // stabT1: { x: 0, y: 0 },
+  stabT1: { x: -65, y: 0 },
   // stabT2: { x: 0, y: 0 },
   // stabTF: { x: 0, y: 0 },
 
@@ -270,8 +264,9 @@ const ANIMATION_SPRITE_OFFSETS: Partial<Record<CharacterAnimation, AnimationSpri
 const DEFAULT_SPRITE_OFFSET: AnimationSpriteOffset = { x: 0, y: 0 };
 
 /**
- * Get the sprite position offset for a given animation.
+ * Get the manual sprite position offset for a given animation.
  * Returns { x: 0, y: 0 } if no offset is registered.
+ * Applied ON TOP of the dynamic width-based correction in PartySlot.
  * @param animation - Animation name
  */
 export function getAnimationSpriteOffset(animation: CharacterAnimation): AnimationSpriteOffset {
@@ -288,12 +283,3 @@ export {
   getWeaponAnimationDef,
   getWeaponPreloadAnimations,
 } from './weaponAnimations';
-
-/**
- * Get the idle animation
- * stand1 = weaponless idle, stand2 = weapon-holding idle
- * @param hasWeapon - Whether the character has a weapon equipped
- */
-export function getIdleAnimation(hasWeapon: boolean = false): CharacterAnimation {
-  return hasWeapon ? 'stand2' : 'stand1';
-}

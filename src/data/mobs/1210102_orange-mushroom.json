@@ -1,7 +1,6 @@
 {
   "id": 1210102,
   "name": "주황버섯",
-  "nameEn": "Orange Mushroom",
   "meta": {
     "level": 8,
     "maxHp": 80,
@@ -108,6 +107,7 @@
       "chance": 0.001
     }
   ],
+  "nameEn": "Orange Mushroom",
   "canJump": true,
   "description": "레벨 : Lv.8 형태 : 식물형  메이플 아일랜드와 빅토리아 아일랜드 전역에서 볼 수 있는 버섯 몬스터이다. 간혹 남의 집에 몰래 숨어들어가 집에 있는 음식들을 먹어치워 매우 강력한 머쉬맘으로 변하기도 한다.",
   "meso": {

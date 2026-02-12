@@ -228,16 +228,16 @@ const ANIMATION_SPRITE_OFFSETS: Partial<Record<CharacterAnimation, AnimationSpri
   // alert:  { x: 0, y: 0 },
 
   // -- One-handed swing --
-  swingO1: { x: -20, y: 5 },
-  swingO2: { x: -5, y: 10 },
-  swingO3: { x: -5, y: 0 },
-  swingOF: { x: 20, y: 20 },
+  // swingO1: { x: -20, y: 5 },
+  // swingO2: { x: -5, y: 10 },
+  // swingO3: { x: -5, y: 0 },
+  // swingOF: { x: 20, y: 20 },
 
   // -- Two-handed swing --
-  swingT1: { x: -38, y: 13 },
-  swingT2: { x: -10, y: 12 },
-  swingT3: { x: -10, y: 10 },
-  swingTF: { x: 0, y: 20 },
+  // swingT1: { x: -38, y: 13 },
+  // swingT2: { x: -10, y: 12 },
+  // swingT3: { x: -10, y: 10 },
+  // swingTF: { x: 0, y: 20 },
 
   // -- Polearm swing --
   // swingP1: { x: 0, y: 0 },
@@ -250,7 +250,7 @@ const ANIMATION_SPRITE_OFFSETS: Partial<Record<CharacterAnimation, AnimationSpri
   // stabOF: { x: 0, y: 0 },
 
   // -- Two-handed stab --
-  stabT1: { x: -65, y: 0 },
+  // stabT1: { x: -65, y: 0 },
   // stabT2: { x: 0, y: 0 },
   // stabTF: { x: 0, y: 0 },
 

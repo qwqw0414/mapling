@@ -206,7 +206,7 @@ export class AssetManager {
   ): Promise<GifSource | null> {
     try {
       const itemsStr = buildItemsString(look);
-      const url = `${GAME_CONFIG.API_BASE_URL}/${GAME_CONFIG.API_REGION}/${GAME_CONFIG.API_VERSION}/Character/animated/${look.skinId}/${itemsStr}/${animation}?padding=0&renderMode=0`;
+      const url = `${GAME_CONFIG.API_BASE_URL}/${GAME_CONFIG.API_REGION}/${GAME_CONFIG.API_VERSION}/Character/animated/${look.skinId}/${itemsStr}/${animation}?padding=100&renderMode=0`;
       console.log(`[AssetManager] Fetching character GIF: [url]=[${url}]`);
 
       const response = await fetch(url);

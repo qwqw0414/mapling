@@ -122,10 +122,7 @@ export class PartySlot extends Container {
   // Current mode tracking for enable/disable
   private currentMode: CharacterMode = 'idle';
 
-  // Body-left-margin: the character body's approximate offset from the image's LEFT edge.
-  // Roughly constant across all weapons/animations because equipment extends rightward.
-  // Derived from unarmed idle GIF analysis (~14px transparent margin + body start).
-  private static readonly BODY_LEFT_MARGIN = 24;
+  // (reserved for future use)
 
   // Stored equip slot bounds for hit detection (relative to equipContainer)
   private equipSlotBounds: Array<{ slot: EquipSlot; x: number; y: number; size: number }> = [];
@@ -263,9 +260,9 @@ export class PartySlot extends Container {
 
   /**
    * Set character sprite (GIF animation or static texture)
-   * With anchor(1,1), the body's distance from the image LEFT edge is roughly constant
-   * (equipment extends rightward). So: sprite.x = baseX + gifWidth keeps the body fixed.
-   * Per-animation manual offsets handle any residual error.
+   * API padding=100 ensures all animation frames share a uniform canvas,
+   * so anchor(0.5, 1) centers the body consistently across all motions.
+   * Per-animation manual offsets are available for fine-tuning if needed.
    * @param gifSource - GIF source to display
    * @param animation - Animation name used for per-animation manual offset lookup
    */
@@ -293,21 +290,16 @@ export class PartySlot extends Container {
       loop: true,
     });
 
-    // Anchor at bottom-right
-    gifSprite.anchor.set(1, 1);
+    // Anchor at center-bottom: padding=100 ensures uniform canvas per character,
+    // so center-anchoring keeps the body in the same position across all animations.
+    gifSprite.anchor.set(0.5, 1);
 
-    // Position: body is ~BODY_LEFT_MARGIN px from the image's left edge (constant).
-    // With anchor(1,1), left edge = sprite.x - width, so body = sprite.x - width + MARGIN.
-    // To keep body at a fixed slot position: sprite.x = targetBodyX - MARGIN + width
-    // spriteBaseX = slotCenter - BODY_LEFT_MARGIN (the constant part)
-    const spriteBaseX = this.slotWidth / 2 - PartySlot.BODY_LEFT_MARGIN;
-
-    // Per-animation manual fine-tuning
+    // Per-animation manual fine-tuning (optional)
     const manualOffset = animation
       ? getAnimationSpriteOffset(animation)
       : { x: 0, y: 0 };
 
-    gifSprite.x = spriteBaseX + gifSource.width + manualOffset.x;
+    gifSprite.x = this.slotWidth / 2 + manualOffset.x;
     gifSprite.y = spriteBottomY + manualOffset.y;
 
     this.characterSprite = gifSprite;
